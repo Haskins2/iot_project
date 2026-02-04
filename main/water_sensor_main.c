@@ -6,7 +6,7 @@
 
 // ADC Channel for Water Sensor (GPIO 4 on ESP32-C6 is ADC1 Channel 4)
 #define WATER_SENSOR_ADC_CHANNEL ADC_CHANNEL_4
-#define WATER_SENSOR_ADC_UNIT ADC_UNIT_1 /
+#define WATER_SENSOR_ADC_UNIT ADC_UNIT_1
 #define WATER_SENSOR_ADC_ATTEN ADC_ATTEN_DB_12 // sets attenuation to 12db. tune this?
 
 static const char *TAG = "water_sensor";
