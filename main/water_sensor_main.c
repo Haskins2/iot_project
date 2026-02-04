@@ -1,11 +1,3 @@
-/* Water Sensor Example
-
-   This example code is in the Public Domain (or CC0 licensed, at your option.)
-
-   Unless required by applicable law or agreed to in writing, this
-   software is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR
-   CONDITIONS OF ANY KIND, either express or implied.
-*/
 #include <stdio.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -14,14 +6,14 @@
 
 // ADC Channel for Water Sensor (GPIO 4 on ESP32-C6 is ADC1 Channel 4)
 #define WATER_SENSOR_ADC_CHANNEL ADC_CHANNEL_4
-#define WATER_SENSOR_ADC_UNIT ADC_UNIT_1
-#define WATER_SENSOR_ADC_ATTEN ADC_ATTEN_DB_12
+#define WATER_SENSOR_ADC_UNIT ADC_UNIT_1 /
+#define WATER_SENSOR_ADC_ATTEN ADC_ATTEN_DB_12 // sets attenuation to 12db. tune this?
 
 static const char *TAG = "water_sensor";
 
 void app_main(void)
 {
-    // ------------- ADC INIT -------------
+    // ADC INIT 
     adc_oneshot_unit_handle_t adc1_handle;
     adc_oneshot_unit_init_cfg_t init_config1 = {
         .unit_id = WATER_SENSOR_ADC_UNIT,
@@ -36,7 +28,7 @@ void app_main(void)
 
     while (1)
     {
-        // ------------- ADC READ -------------
+        // ADC READ
         int adc_raw;
         ESP_ERROR_CHECK(adc_oneshot_read(adc1_handle, WATER_SENSOR_ADC_CHANNEL, &adc_raw));
         ESP_LOGI(TAG, "Water Sensor Raw Value: %d", adc_raw);
