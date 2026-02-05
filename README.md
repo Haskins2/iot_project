@@ -48,3 +48,17 @@ Run `idf.py -p PORT flash monitor` to build, flash and monitor the project.
 for me the port is `/dev/cu.usbserial-210` (macos)
 
 (To exit the serial monitor, type `Ctrl-]`.)
+
+---
+
+# Wiring Setup
+
+Water Sensor:
+
+- red/black to 3.3v/ground
+- yellow signal pin to GPIO 4
+
+Servo:
+
+- red/brown to 5v/ground
+- orange (PWM) to GPIO 21
