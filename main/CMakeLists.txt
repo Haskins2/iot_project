@@ -1,3 +1,3 @@
-idf_component_register(SRCS "water_sensor_main.c"
+idf_component_register(SRCS "main.c"
                        INCLUDE_DIRS "."
-                       PRIV_REQUIRES esp_adc)
+                       PRIV_REQUIRES esp_adc esp_driver_ledc)
