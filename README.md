@@ -5,6 +5,10 @@ ESP model nos & datasheets:
 - `esp32-c6-wroom-1`
   - https://documentation.espressif.com/esp32-c6-wroom-1_wroom-1u_datasheet_en.pdf
 - `esp-eye`
+  - https://github.com/espressif/esp-who/blob/master/docs/en/get-started/ESP-EYE_Getting_Started_Guide.md
+  - this is basically an esp32 just with a 2mp camera
+  - it has no GPIO pins so cant be used to actuate anything.
+  - so use this for cloud communication?
 
 Pump
 
