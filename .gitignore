@@ -23,12 +23,12 @@
 
 # MQTT Specific
 # Docker volumes and data
-mosquitto/data/*
-!mosquitto/data/.gitkeep
-!mosquitto/log/.gitkeep
+**/mosquitto/data/*
+!**/mosquitto/data/.gitkeep
+!**/mosquitto/log/.gitkeep
 
 # Mosquitto password file 
-mosquitto/config/passwd
+**/mosquitto/config/passwd
 
 # Build artifacts and directories
 **/build/
