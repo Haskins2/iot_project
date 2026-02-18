@@ -1,0 +1,46 @@
+version: '3.8'
+
+services:
+  mosquitto:
+    image: eclipse-mosquitto:2.0
+    container_name: mqtt-broker
+    ports:
+      - "1883:1883"
+    volumes:
+      - ./mosquitto/config/mosquitto.conf:/mosquitto/config/mosquitto.conf
+      - ./mosquitto/config/passwd:/mosquitto/config/passwd
+      - ./mosquitto/data:/mosquitto/data
+      - ./mosquitto/log:/mosquitto/log
+    networks:
+      - mqtt-network
+    restart: unless-stopped
+
+  subscriber:
+    build:
+      context: ./subscriber
+      dockerfile: Dockerfile
+    container_name: mqtt-subscriber
+    env_file:
+      - .env
+    depends_on:
+      - mosquitto
+    networks:
+      - mqtt-network
+    restart: unless-stopped
+    
+  # publisher:
+  #   build:
+  #     context: ./publisher
+  #     dockerfile: Dockerfile
+  #   container_name: mqtt-publisher
+  #   env_file:
+  #     - .env
+  #   depends_on:
+  #     - mosquitto
+  #   networks:
+  #     - mqtt-network
+  #   restart: unless-stopped
+
+networks:
+  mqtt-network:
+    driver: bridge
