@@ -26,7 +26,7 @@ services:
       - mosquitto
     networks:
       - mqtt-network
-    restart: unless-stopped
+    restart: "no"
     
   # publisher:
   #   build:
@@ -43,4 +43,5 @@ services:
 
 networks:
   mqtt-network:
+    name: mqtt-network
     driver: bridge
