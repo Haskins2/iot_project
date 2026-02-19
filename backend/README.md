@@ -51,3 +51,59 @@ docker compose up -d --build
 # Status
 docker compose ps
 ```
+
+# Production Deployment Information
+
+## VM Details
+- **Public IP:** 150.230.122.17
+- **Region:** UK South (London)
+- **Shape:** VM.Standard.E2.1.Micro
+- **OS:** Ubuntu 22.04 LTS
+
+## Access Information
+
+### SSH Access
+Prior to running this command please message @j-wilsons so that I can add your ssh keys to the vm
+```bash
+ssh -i /path/to/oracle-mqtt-vm.pem ubuntu@150.230.122.17
+```
+
+### MQTT Broker
+- **Host:** 150.230.122.17
+- **Port:** 1883 (None TLS for the momment)
+- **Authentication:** Required
+
+## Credentials
+
+**SENSITIVE**
+
+- **Subscriber Username:** subscriber_client
+- **Subscriber Password:** [contact @j-wilsons]
+- **Publisher Username:** publisher_client
+- **Publisher Password:** [contact @j-wilsons - needed for ESP32]
+
+## Quick Commands
+```bash
+# SSH to VM
+ssh -i key.pem ubuntu@150.230.122.17
+
+# Navigate to project
+cd ~/iot_project/backend
+
+# View logs
+docker-compose logs -f subscriber
+
+# Restart services
+docker-compose restart
+
+# Update from git
+git pull origin main
+docker-compose up -d --build
+
+# Test publish
+mosquitto_pub -h localhost -p 1883 -u publisher_client -P 'PASSWORD' \
+  -t controller/telemetry \
+  -m '{"deviceId":"test","ts":"2026-02-16T20:00:00Z","temperature":22.0,"status":"ok"}'
+```
+
+## Deployed: [D18/02/2026]
