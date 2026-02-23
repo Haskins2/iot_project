@@ -15,12 +15,31 @@
 
 /* ------- Configuration ------- */
 
-// Wi-Fi 
-#define WIFI_SSID      "CleomeneBB"                 // IPhone name (Cleo's IPhone)
-#define WIFI_PASS      "qwertyuiop"                 // IPhone hotspot password
-#define MQTT_URI       "mqtt://192.168.1.10:1883"   // MQTT broker
+// Optionally include credentials from a gitignored file.
+#if defined(__has_include)
+#  if __has_include("credentials.h")
+#    include "credentials.h"
+#  else
+#    warning "credentials.h not found; using defaults in main.c. Create main/credentials.h from credentials.h.example and add to .gitignore"
+#  endif
+#endif
+
+// Wi-Fi (defaults can be overridden by main/credentials.h)
+#ifndef WIFI_SSID
+#define WIFI_SSID      "username"               // IPhone name (Cleo's IPhone)
+#endif
+#ifndef WIFI_PASS
+#define WIFI_PASS      "password"               // IPhone hotspot password
+#endif
+#ifndef MQTT_URI
+#define MQTT_URI       "address"                // Mosquitto broker
+#endif
+#ifndef TOPIC_SUB
 #define TOPIC_SUB      "test/esp32c6/sub"
+#endif
+#ifndef TOPIC_PUB
 #define TOPIC_PUB      "test/esp32c6/pub"
+#endif
 
 // Water Sensor (ADC)
 #define WATER_SENSOR_ADC_CHANNEL ADC_CHANNEL_4
