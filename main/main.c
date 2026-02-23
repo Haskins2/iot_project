@@ -8,8 +8,19 @@
 #include "esp_log.h"
 #include "esp_adc/adc_oneshot.h"
 #include "driver/ledc.h"
+#include "nvs_flash.h"
+#include "esp_wifi.h"
+#include "esp_event.h"
+#include "esp_netif.h"
 
 /* ------- Configuration ------- */
+
+// Wi-Fi 
+#define WIFI_SSID      "CleomeneBB"                 // IPhone name (Cleo's IPhone)
+#define WIFI_PASS      "qwertyuiop"                 // IPhone hotspot password
+#define MQTT_URI       "mqtt://192.168.1.10:1883"   // MQTT broker
+#define TOPIC_SUB      "test/esp32c6/sub"
+#define TOPIC_PUB      "test/esp32c6/pub"
 
 // Water Sensor (ADC)
 #define WATER_SENSOR_ADC_CHANNEL ADC_CHANNEL_4
@@ -33,6 +44,76 @@
 
 static const char *TAG = "water_sensor";
 
+static EventGroupHandle_t s_wifi_event_group;
+#define WIFI_CONNECTED_BIT BIT0
+
+// ---------- Wi-Fi event handler ----------
+static void wifi_event_handler(void* arg, esp_event_base_t event_base,
+                               int32_t event_id, void* event_data)
+{
+    if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_START) {
+        ESP_LOGI(TAG, "Wi-Fi: Starting...");
+        esp_wifi_connect();
+    } else if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_DISCONNECTED) {
+        ESP_LOGI(TAG, "Wi-Fi: Disconnected! Reconnecting...");
+        esp_wifi_connect();
+        xEventGroupClearBits(s_wifi_event_group, WIFI_CONNECTED_BIT);
+    } else if (event_base == IP_EVENT && event_id == IP_EVENT_STA_GOT_IP) {
+        ip_event_got_ip_t* event = (ip_event_got_ip_t*) event_data;
+        ESP_LOGI(TAG, "Wi-Fi: Connected! IP=" IPSTR, IP2STR(&event->ip_info.ip));
+        xEventGroupSetBits(s_wifi_event_group, WIFI_CONNECTED_BIT);
+    }
+}
+
+// ---------- Wi-Fi init ----------
+static void wifi_init_sta(void)
+{
+    ESP_LOGI(TAG, "Wi-Fi: Initializing with SSID '%s'", WIFI_SSID);
+
+    s_wifi_event_group = xEventGroupCreate();
+
+    ESP_ERROR_CHECK(esp_netif_init());
+    ESP_ERROR_CHECK(esp_event_loop_create_default());
+    esp_netif_create_default_wifi_sta();
+
+    wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
+    ESP_ERROR_CHECK(esp_wifi_init(&cfg));
+
+    esp_event_handler_instance_t instance_any_id;
+    esp_event_handler_instance_t instance_got_ip;
+    ESP_ERROR_CHECK(esp_event_handler_instance_register(WIFI_EVENT,
+                                                        ESP_EVENT_ANY_ID,
+                                                        &wifi_event_handler,
+                                                        NULL,
+                                                        &instance_any_id));
+    ESP_ERROR_CHECK(esp_event_handler_instance_register(IP_EVENT,
+                                                        IP_EVENT_STA_GOT_IP,
+                                                        &wifi_event_handler,
+                                                        NULL,
+                                                        &instance_got_ip));
+
+    wifi_config_t wifi_config = {
+        .sta = {
+            .ssid = WIFI_SSID,
+            .password = WIFI_PASS,
+            .threshold.authmode = WIFI_AUTH_WPA2_PSK,  // iPhone hotspot security
+        },
+    };
+    ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
+    ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &wifi_config));
+    ESP_ERROR_CHECK(esp_wifi_start());
+
+    ESP_LOGI(TAG, "Wi-Fi: Connection started. Waiting for IP...");
+    
+    // Wait for connection (timeout 30s)
+    xEventGroupWaitBits(s_wifi_event_group, WIFI_CONNECTED_BIT, pdFALSE, pdTRUE, pdMS_TO_TICKS(30000));
+    if (xEventGroupGetBits(s_wifi_event_group) & WIFI_CONNECTED_BIT) {
+        ESP_LOGI(TAG, "Wi-Fi: ✅ Successfully connected!");
+    } else {
+        ESP_LOGE(TAG, "Wi-Fi: ❌ Connection timeout!");
+    }
+}
+
 /* ------- Servo Control ------- */
 
 static void set_servo_angle(int angle)
@@ -55,8 +136,21 @@ static void set_servo_angle(int angle)
     ledc_update_duty(LEDC_LOW_SPEED_MODE, SERVO_CHANNEL);
 }
 
+
+
 void app_main(void)
 {
+     // NVS for Wi-Fi
+    esp_err_t ret = nvs_flash_init();
+    if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
+        ESP_ERROR_CHECK(nvs_flash_erase());
+        ret = nvs_flash_init();
+    }
+    ESP_ERROR_CHECK(ret);
+
+    // Connect to Wi-Fi first
+    wifi_init_sta();
+
     // ADC INIT
     adc_oneshot_unit_handle_t adc1_handle;
     adc_oneshot_unit_init_cfg_t init_config1 = {
@@ -87,6 +181,8 @@ void app_main(void)
         .duty = 0,
         .hpoint = 0};
     ESP_ERROR_CHECK(ledc_channel_config(&channel_conf));
+
+    ESP_LOGI(TAG, "Wi-Fi: Starting water sensor loop...");
 
     while (1)
     {
