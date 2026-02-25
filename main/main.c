@@ -3,6 +3,7 @@
  */
 
 #include <stdio.h>
+#include <string.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "esp_log.h"
@@ -12,6 +13,8 @@
 #include "esp_wifi.h"
 #include "esp_event.h"
 #include "esp_netif.h"
+#include "esp_system.h"
+#include "mqtt_client.h"
 
 /* ------- Configuration ------- */
 
@@ -32,14 +35,26 @@
 #define WIFI_PASS      "password"               // IPhone hotspot password
 #endif
 #ifndef MQTT_URI
-#define MQTT_URI       "address"                // Mosquitto broker
+#define MQTT_URI       "address"                // Hard-coded Mosquitto broker
 #endif
-#ifndef TOPIC_SUB
-#define TOPIC_SUB      "test/esp32c6/sub"
+#ifndef MQTT_USERNAME
+#define MQTT_USERNAME  "username"                       // Username (leave empty if no auth)
 #endif
-#ifndef TOPIC_PUB
-#define TOPIC_PUB      "test/esp32c6/pub"
+#ifndef MQTT_PASSWORD
+#define MQTT_PASSWORD  "password"                       // Password (leave empty if no auth)
 #endif
+
+// Topic to publish raw water level + UID
+#ifndef TOPIC_WATER_LEVEL
+#define TOPIC_WATER_LEVEL "controller/water_level"
+#endif
+
+/* Logging tag used by ESP_LOG* macros */
+static const char *TAG = "water_sensor";
+
+/* Global MQTT client and connection flag */
+static esp_mqtt_client_handle_t mqtt_client = NULL;
+static bool mqtt_connected = false;
 
 // Water Sensor (ADC)
 #define WATER_SENSOR_ADC_CHANNEL ADC_CHANNEL_4
@@ -61,10 +76,85 @@
 // Timing
 #define SENSOR_READ_INTERVAL_MS 1000
 
-static const char *TAG = "water_sensor";
-
 static EventGroupHandle_t s_wifi_event_group;
 #define WIFI_CONNECTED_BIT BIT0
+
+static void log_error_if_nonzero(const char *message, int error_code)
+{
+    if (error_code != 0) {
+        ESP_LOGE(TAG, "Last error %s: 0x%x", message, error_code);
+    }
+}
+
+/*
+ * @brief Event handler registered to receive MQTT events
+ *
+ *  This function is called by the MQTT client event loop.
+ *
+ * @param handler_args user data registered to the event.
+ * @param base Event base for the handler(always MQTT Base in this example).
+ * @param event_id The id for the received event.
+ * @param event_data The data for the event, esp_mqtt_event_handle_t.
+ */
+static void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_t event_id, void *event_data)
+{
+    ESP_LOGD(TAG, "Event dispatched from event loop base=%s, event_id=%" PRIi32 "", base, event_id);
+    esp_mqtt_event_handle_t event = event_data;
+    switch ((esp_mqtt_event_id_t)event_id) {
+    case MQTT_EVENT_CONNECTED:
+        ESP_LOGI(TAG, "MQTT_EVENT_CONNECTED");
+        mqtt_connected = true;
+        break;
+    case MQTT_EVENT_DISCONNECTED:
+        ESP_LOGI(TAG, "MQTT_EVENT_DISCONNECTED");
+        mqtt_connected = false;
+        break;
+    case MQTT_EVENT_SUBSCRIBED:
+        ESP_LOGI(TAG, "MQTT_EVENT_SUBSCRIBED, msg_id=%d", event->msg_id);
+        break;
+    case MQTT_EVENT_UNSUBSCRIBED:
+        ESP_LOGI(TAG, "MQTT_EVENT_UNSUBSCRIBED, msg_id=%d", event->msg_id);
+        break;
+    case MQTT_EVENT_PUBLISHED:
+        ESP_LOGI(TAG, "MQTT_EVENT_PUBLISHED, msg_id=%d", event->msg_id);
+        break;
+    case MQTT_EVENT_DATA:
+        ESP_LOGI(TAG, "MQTT_EVENT_DATA");
+        printf("TOPIC=%.*s\r\n", event->topic_len, event->topic);
+        printf("DATA=%.*s\r\n", event->data_len, event->data);
+        break;
+    case MQTT_EVENT_ERROR:
+        ESP_LOGI(TAG, "MQTT_EVENT_ERROR");
+        if (event->error_handle->error_type == MQTT_ERROR_TYPE_TCP_TRANSPORT) {
+            log_error_if_nonzero("reported from esp-tls", event->error_handle->esp_tls_last_esp_err);
+            log_error_if_nonzero("reported from tls stack", event->error_handle->esp_tls_stack_err);
+            log_error_if_nonzero("captured as transport's socket errno",  event->error_handle->esp_transport_sock_errno);
+            ESP_LOGI(TAG, "Last errno string (%s)", strerror(event->error_handle->esp_transport_sock_errno));
+        }
+        break;
+    default:
+        ESP_LOGI(TAG, "Other event id:%d", event->event_id);
+        break;
+    }
+}
+
+static void mqtt_app_start(void)
+{
+    esp_mqtt_client_config_t mqtt_cfg = {
+        .broker.address.uri = MQTT_URI,
+        .credentials.username = MQTT_USERNAME,
+        .credentials.authentication.password = MQTT_PASSWORD,
+    };
+
+    mqtt_client = esp_mqtt_client_init(&mqtt_cfg);
+    if (mqtt_client == NULL) {
+        ESP_LOGE(TAG, "MQTT: Failed to initialize MQTT client");
+        return;
+    }
+    ESP_ERROR_CHECK(esp_mqtt_client_register_event(mqtt_client, ESP_EVENT_ANY_ID, mqtt_event_handler, NULL));
+    ESP_ERROR_CHECK(esp_mqtt_client_start(mqtt_client));
+    ESP_LOGI(TAG, "MQTT: Connecting to %s (user: %s)", MQTT_URI, MQTT_USERNAME);
+}
 
 // ---------- Wi-Fi event handler ----------
 static void wifi_event_handler(void* arg, esp_event_base_t event_base,
@@ -85,7 +175,7 @@ static void wifi_event_handler(void* arg, esp_event_base_t event_base,
 }
 
 // ---------- Wi-Fi init ----------
-static void wifi_init_sta(void)
+static bool wifi_init_sta(void)
 {
     ESP_LOGI(TAG, "Wi-Fi: Initializing with SSID '%s'", WIFI_SSID);
 
@@ -125,11 +215,13 @@ static void wifi_init_sta(void)
     ESP_LOGI(TAG, "Wi-Fi: Connection started. Waiting for IP...");
     
     // Wait for connection (timeout 30s)
-    xEventGroupWaitBits(s_wifi_event_group, WIFI_CONNECTED_BIT, pdFALSE, pdTRUE, pdMS_TO_TICKS(30000));
-    if (xEventGroupGetBits(s_wifi_event_group) & WIFI_CONNECTED_BIT) {
+    EventBits_t bits = xEventGroupWaitBits(s_wifi_event_group, WIFI_CONNECTED_BIT, pdFALSE, pdTRUE, pdMS_TO_TICKS(30000));
+    if (bits & WIFI_CONNECTED_BIT) {
         ESP_LOGI(TAG, "Wi-Fi: ✅ Successfully connected!");
+        return true;
     } else {
         ESP_LOGE(TAG, "Wi-Fi: ❌ Connection timeout!");
+        return false;
     }
 }
 
@@ -157,6 +249,8 @@ static void set_servo_angle(int angle)
 
 
 
+
+
 void app_main(void)
 {
      // NVS for Wi-Fi
@@ -168,7 +262,12 @@ void app_main(void)
     ESP_ERROR_CHECK(ret);
 
     // Connect to Wi-Fi first
-    wifi_init_sta();
+    if (!wifi_init_sta()) {
+        ESP_LOGE(TAG, "Failed to connect to Wi-Fi. Halting.");
+        while (1) {
+            vTaskDelay(pdMS_TO_TICKS(1000));
+        }
+    }
 
     // ADC INIT
     adc_oneshot_unit_handle_t adc1_handle;
@@ -201,14 +300,34 @@ void app_main(void)
         .hpoint = 0};
     ESP_ERROR_CHECK(ledc_channel_config(&channel_conf));
 
-    ESP_LOGI(TAG, "Wi-Fi: Starting water sensor loop...");
+    /* Start MQTT */
+    mqtt_app_start();
+
+    ESP_LOGI(TAG, "Starting water sensor main loop...");
 
     while (1)
     {
+        /* Wait for Wi-Fi to be connected */
+        EventBits_t bits = xEventGroupWaitBits(s_wifi_event_group, WIFI_CONNECTED_BIT, pdFALSE, pdTRUE, pdMS_TO_TICKS(1000));
+        if (!(bits & WIFI_CONNECTED_BIT)) {
+            ESP_LOGD(TAG, "Waiting for Wi-Fi connection...");
+            continue;
+        }
+
         // ADC READ
         int adc_raw;
         ESP_ERROR_CHECK(adc_oneshot_read(adc1_handle, WATER_SENSOR_ADC_CHANNEL, &adc_raw));
         ESP_LOGI(TAG, "Water Sensor Raw Value: %d", adc_raw);
+
+        /* Publish reading to MQTT if connected */
+        if (mqtt_client && mqtt_connected) {
+            char payload[128];
+            int len = snprintf(payload, sizeof(payload), "{\"water_raw\":%d}", adc_raw);
+            if (len > 0 && len < (int)sizeof(payload)) {
+                int msg_id = esp_mqtt_client_publish(mqtt_client, "controller/water_level", payload, 0, 1, 0);
+                ESP_LOGI(TAG, "MQTT: Published msg_id=%d", msg_id);
+            }
+        }
 
         // ACTUATE SERVO
         if (adc_raw > 300)

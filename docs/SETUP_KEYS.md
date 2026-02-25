@@ -47,3 +47,61 @@ Follow these steps to keep secret keys and credentials out of your repository wh
 ```
 
 That's it — build will use the values from `main/credentials.h` if present, otherwise the defaults in `main.c` will be used for local development.
+
+## MQTT Broker Credentials
+
+The project connects to an MQTT broker using **username and password authentication** (not SSH keys).
+
+### Setting up MQTT credentials
+
+1. Copy the template:
+
+   ```bash
+   cp main/credentials.h.example main/credentials.h
+   ```
+
+2. Edit `main/credentials.h` and add your MQTT credentials:
+
+   ```c
+   #define MQTT_URI "mqtt://192.0.2.1:1883"       // Broker address
+   #define MQTT_USERNAME "your_mqtt_user"         // Username (leave empty for no auth)
+   #define MQTT_PASSWORD "your_mqtt_password"     // Password (leave empty for no auth)
+   ```
+
+3. If your broker doesn't require authentication, leave both blank:
+
+   ```c
+   #define MQTT_USERNAME ""
+   #define MQTT_PASSWORD ""
+   ```
+
+4. Rebuild and flash:
+
+   ```bash
+   idf.py build
+   idf.py flash
+   ```
+
+## Quick cloud subscriber (log messages)
+
+To verify messages arrive in your cloud broker, subscribe to the `controller/water_level` topic and log payloads.
+
+- Using mosquitto (simple):
+
+```bash
+mosquitto_sub -h <BROKER_HOST> -t controller/water_level -v
+```
+
+- Using a tiny Node.js subscriber (prints JSON payloads):
+
+```js
+// install: npm install mqtt
+const mqtt = require('mqtt');
+const client = mqtt.connect('mqtt://<BROKER_HOST>');
+client.on('connect', () => client.subscribe('controller/water_level'));
+client.on('message', (topic, msg) => {
+   console.log(new Date().toISOString(), topic, msg.toString());
+});
+```
+
+Replace `<BROKER_HOST>` with your broker address or use credentials (username@host) per the project's `main/credentials.h`.
