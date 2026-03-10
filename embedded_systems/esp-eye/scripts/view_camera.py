@@ -4,13 +4,15 @@ import argparse
 import io
 import sys
 import time
+import struct
 
 import serial
 from PIL import Image
 import matplotlib.pyplot as plt
 import matplotlib.animation as animation
 
-DEFAULT_PORT = "/dev/tty.usbserial-13340"
+# CHANGE PORT
+DEFAULT_PORT = "/dev/tty.usbserial-1320"  # must be a better way to do this? without having to use --port?
 DEFAULT_BAUD = 921600
 
 
@@ -43,30 +45,64 @@ def read_line(ser: serial.Serial) -> str:
 
 
 def read_frame(ser: serial.Serial) -> bytes:
-    """Block until a FRAME header arrives, then return the complete JPEG bytes."""
+    """Block until a binary frame header arrives, then return the complete JPEG bytes."""
+    header_fmt = "<HLHH"  # uint16 magic, uint32 len, uint16 chunk_id, uint16 total_chunks (Little Endian)
+    header_size = struct.calcsize(header_fmt)
+    magic_byte1 = b"\xca"
+    magic_byte2 = b"\xfe"  # 0xFECA total
+
     while True:
-        line = read_line(ser)
-
-        if line.startswith("CAM_ERR:"):
-            print(f"[ESP32] {line}", file=sys.stderr)
+        # Synching logic: read 1 byte at a time until we find the magic 0xFECA (Little endian: 0xca first)
+        sync1 = ser.read(1)
+        if not sync1:
             continue
 
-        if not line.startswith("FRAME:"):
-            continue
+        if sync1 == magic_byte1:
+            sync2 = ser.read(1)
+            if sync2 == magic_byte2:
+                # We found magic, now read the rest of the struct (length, chunk_id, total_chunks) -> 8 bytes
+                header_data = ser.read(header_size - 2)
+                if len(header_data) < header_size - 2:
+                    continue  # Timeout / invalid read length
 
-        try:
-            length = int(line.split(":")[1])
-        except ValueError:
-            continue
+                _, length, chunk_id, total_chunks = struct.unpack(
+                    header_fmt, sync1 + sync2 + header_data
+                )
 
-        # Read the frame body
-        data = bytearray(length)
-        received = 0
-        while received < length:
-            chunk = ser.read(length - received)
-            data[received : received + len(chunk)] = chunk
-            received += len(chunk)
-        return bytes(data)
+                # Check for sane values (basic defense vs false sync)
+                if length == 0 or length > 500_000:
+                    continue
+
+                # Read the frame body
+                data = bytearray(length)
+                received = 0
+                while received < length:
+                    chunk = ser.read(length - received)
+                    if not chunk:
+                        break  # Serial timeout/error
+                    data[received : received + len(chunk)] = chunk
+                    received += len(chunk)
+
+                if received < length:
+                    continue  # Drop incomplete frame
+
+                return bytes(data)
+
+        elif sync1 == b"C":
+            # Just in case we get a string error message: error starts with "CAM_ERR:"
+            rest = ser.read(7)
+            if rest == b"AM_ERR:":
+                # read to newline
+                err_msg = bytearray(b"C" + rest)
+                while True:
+                    ch = ser.read(1)
+                    if not ch or ch == b"\n":
+                        break
+                    err_msg.extend(ch)
+                print(
+                    f"[ESP32] {err_msg.decode('ascii', errors='ignore').strip()}",
+                    file=sys.stderr,
+                )
 
 
 def decode_jpeg(data: bytes) -> Image.Image | None:

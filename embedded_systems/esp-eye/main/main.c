@@ -48,10 +48,10 @@ static const camera_config_t CAMERA_CONFIG = {
     .ledc_channel = LEDC_CHANNEL_0,
 
     .pixel_format = PIXFORMAT_JPEG,
-    .frame_size   = FRAMESIZE_UXGA,  // 1600×1200
-    .jpeg_quality = 10,              // 0–63, lower = better quality
-    .fb_count     = 2,
-    .fb_location  = CAMERA_FB_IN_PSRAM,
+    .frame_size   = FRAMESIZE_QVGA,  // 320x240 (better suited for BLE)
+    .jpeg_quality = 20,              // 0–63, lower = better quality
+    .fb_count     = 1,               // 1 frame fits in DRAM
+    .fb_location  = CAMERA_FB_IN_DRAM, // PSRAM not needed for QVGA
     .grab_mode    = CAMERA_GRAB_WHEN_EMPTY,
 };
 
@@ -78,6 +78,24 @@ static void uart_send(const char *msg)
     uart_write_bytes(UART_NUM_0, msg, strlen(msg));
 }
 
+// --- Transport & Packaging ---
+
+typedef struct __attribute__((packed)) {
+    uint16_t magic_header; // e.g. 0xFECA
+    uint32_t total_len;    // Length of the full image frame
+    uint16_t chunk_id;     // Optional: Future use for chunking
+    uint16_t total_chunks; // Optional: Future use for chunking
+} frame_header_t;
+
+/* Abstract transport interface to easily switch from UART to BLE later */
+static void transport_send_data(const uint8_t *data, size_t len)
+{
+    // For now, this just wraps UART. Later, this is where BLE notify/indicate will go.
+    // If chunking logic is needed inside this method, split 'data' into chunks
+    // and limit by BLE MTU before transmitting.
+    uart_write_bytes(UART_NUM_0, data, len);
+}
+
 // Camera functions
 
 static esp_err_t camera_init(void)
@@ -87,10 +105,18 @@ static esp_err_t camera_init(void)
 
 static void send_frame(const camera_fb_t *fb)
 {
-    char header[32];
-    int n = snprintf(header, sizeof(header), "FRAME:%zu\n", fb->len);
-    uart_write_bytes(UART_NUM_0, header, n);
-    uart_write_bytes(UART_NUM_0, fb->buf, fb->len);
+    frame_header_t header = {
+        .magic_header = 0xFECA,
+        .total_len    = fb->len,
+        .chunk_id     = 0,     // For future: chunking support
+        .total_chunks = 1      // For future: chunking support
+    };
+
+    // Send the binary metadata header
+    transport_send_data((const uint8_t *)&header, sizeof(header));
+    
+    // Send payload (Future: slice this buffer using BLE_MTU here, or within transport_send_data)
+    transport_send_data(fb->buf, fb->len);
 }
 
 
