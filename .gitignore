@@ -92,4 +92,4 @@ Desktop.ini
 *.sln.docstates # Visual Studio
 
 sdkconfig*
-.clangd
+.clangdembedded_systems/esp-eye/.cache/
