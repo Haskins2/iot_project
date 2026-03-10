@@ -10,8 +10,8 @@ from PIL import Image
 import matplotlib.pyplot as plt
 import matplotlib.animation as animation
 
-DEFAULT_PORT = "/dev/tty.usbserial-210"
-DEFAULT_BAUD = 115200
+DEFAULT_PORT = "/dev/tty.usbserial-13340"
+DEFAULT_BAUD = 921600
 
 
 def parse_args() -> argparse.Namespace:
@@ -100,8 +100,11 @@ class Viewer:
             self.img_display = self.ax.imshow(img)
         else:
             self.img_display.set_data(img)
+        ble_fps_low = (100 * 1024) / byte_count if byte_count else 0
+        ble_fps_high = (200 * 1024) / byte_count if byte_count else 0
         self.ax.set_title(
-            f"{img.width}x{img.height}  |  {byte_count} bytes  |  {self._fps():.1f} fps",
+            f"{img.width}x{img.height}  |  {byte_count} bytes  |  {self._fps():.1f} fps"
+            f"  |  BLE: {ble_fps_low:.1f}\u2013{ble_fps_high:.1f} fps (100\u2013200 KB/s)",
             fontsize=9,
         )
         self.fig.canvas.draw_idle()

@@ -43,15 +43,15 @@ static const camera_config_t CAMERA_CONFIG = {
     .pin_href     = CAM_PIN_HREF,
     .pin_pclk     = CAM_PIN_PCLK,
 
-    .xclk_freq_hz = 10000000,        // 10 MHz, conservative for OV2640
+    .xclk_freq_hz = 20000000,        // 20 MHz, standard for OV2640
     .ledc_timer   = LEDC_TIMER_0,
     .ledc_channel = LEDC_CHANNEL_0,
 
     .pixel_format = PIXFORMAT_JPEG,
-    .frame_size   = FRAMESIZE_QVGA,  // 320×240
-    .jpeg_quality = 12,              // 0–63, lower = better quality
-    .fb_count     = 1,
-    .fb_location  = CAMERA_FB_IN_DRAM,
+    .frame_size   = FRAMESIZE_UXGA,  // 1600×1200
+    .jpeg_quality = 10,              // 0–63, lower = better quality
+    .fb_count     = 2,
+    .fb_location  = CAMERA_FB_IN_PSRAM,
     .grab_mode    = CAMERA_GRAB_WHEN_EMPTY,
 };
 
@@ -62,6 +62,14 @@ static const camera_config_t CAMERA_CONFIG = {
  * printf/fwrite must not be used after this — they conflict with the driver. */
 static void uart_init(void)
 {
+    const uart_config_t uart_cfg = {
+        .baud_rate  = 921600,
+        .data_bits  = UART_DATA_8_BITS,
+        .parity     = UART_PARITY_DISABLE,
+        .stop_bits  = UART_STOP_BITS_1,
+        .flow_ctrl  = UART_HW_FLOWCTRL_DISABLE,
+    };
+    uart_param_config(UART_NUM_0, &uart_cfg);
     uart_driver_install(UART_NUM_0, /*rx_buf=*/256, /*tx_buf=*/0, 0, NULL, 0);
 }
 
