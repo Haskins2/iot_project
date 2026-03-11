@@ -1,20 +1,59 @@
 version: '3.8'
 
 services:
+
+  # -------------
+  # MQTT Broker 
+  # -------------
   mosquitto:
     image: eclipse-mosquitto:2.0
     container_name: mqtt-broker
     ports:
-      - "1883:1883"
+      - "8883:8883"           # TLS only used
+    entrypoint: ["/mosquitto/scripts/entrypoint.sh"] # Dynsec entrypoint
     volumes:
       - ./mosquitto/config/mosquitto.conf:/mosquitto/config/mosquitto.conf
-      - ./mosquitto/config/passwd:/mosquitto/config/passwd
+      - ./mosquitto/config:/mosquitto/config        # dynsec.json written here
+      - ./mosquitto/certs:/mosquitto/certs:ro
       - ./mosquitto/data:/mosquitto/data
       - ./mosquitto/log:/mosquitto/log
+      - ./mosquitto/scripts/init-dynsec.sh:/mosquitto/scripts/init-dynsec.sh
+      - ./mosquitto/scripts/entrypoint.sh:/mosquitto/scripts/entrypoint.sh
+    environment:
+      - PROVISIONING_PASSWORD=${PROVISIONING_PASSWORD}
+      - BOOTSTRAP_PASSWORD=${BOOTSTRAP_PASSWORD}
+      - SUBSCRIBER_PASSWORD=${SUBSCRIBER_PASSWORD}
     networks:
       - mqtt-network
     restart: unless-stopped
 
+  # ---------------------
+  # Provisioning service
+  # ---------------------
+  provisioning:
+    build:
+      context: ./provisioning
+      dockerfile: Dockerfile
+    container_name: mqtt-provisioning
+    environment:
+      - MQTT_BROKER=mosquitto
+      - MQTT_PORT=8883
+      - CA_CERT=/certs/ca.crt
+      - MQTT_USERNAME=provisioning-service
+      - MQTT_PASSWORD=${PROVISIONING_PASSWORD}
+      - BOOTSTRAP_SECRET=${BOOTSTRAP_SECRET}
+      - TOKEN_TTL_HOURS=${TOKEN_TTL_HOURS:-1}
+    volumes:
+      - ./mosquitto/certs:/certs:ro
+    networks:
+      - mqtt-network
+    depends_on:
+      - mosquitto
+    restart: unless-stopped
+
+  # -------------------
+  # Subscriber service
+  # -------------------
   subscriber:
     build:
       context: ./subscriber
@@ -22,19 +61,31 @@ services:
     container_name: mqtt-subscriber
     env_file:
       - .env
+    environment:
+      - MQTT_BROKER=mosquitto
+      - MQTT_PORT=8883
+      - CA_CERT=/certs/ca.crt
+      - MQTT_USERNAME=subscriber-service
+      - MQTT_PASSWORD=${SUBSCRIBER_PASSWORD}
+    volumes:
+      - ./mosquitto/certs:/certs:ro
     depends_on:
       - mosquitto
     networks:
       - mqtt-network
-    restart: "no"
-    
+    restart: unless-stopped
+
   # publisher:
   #   build:
   #     context: ./publisher
   #     dockerfile: Dockerfile
   #   container_name: mqtt-publisher
-  #   env_file:
-  #     - .env
+  #   environment:
+  #     - MQTT_BROKER=mosquitto
+  #     - MQTT_PORT=8883
+  #     - CA_CERT=/certs/ca.crt
+  #   volumes:
+  #     - ./mosquitto/certs:/certs:ro
   #   depends_on:
   #     - mosquitto
   #   networks:

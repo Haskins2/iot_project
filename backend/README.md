@@ -54,6 +54,9 @@ docker compose ps
 
 # Production Deployment Information
 
+## Security
+
+
 ## VM Details
 - **Public IP:** 150.230.122.17
 - **Region:** UK South (London)
@@ -106,4 +109,4 @@ mosquitto_pub -h localhost -p 1883 -u publisher_client -P 'PASSWORD' \
   -m '{"deviceId":"test","ts":"2026-02-16T20:00:00Z","temperature":22.0,"status":"ok"}'
 ```
 
-## Deployed: [D18/02/2026]
+## Deployed: [18/02/2026]
