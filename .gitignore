@@ -93,3 +93,6 @@ Desktop.ini
 
 sdkconfig*
 .clangd
+
+# Ignore local credentials and secrets
+/embedded_systems/esp32c6/main/credentials.h
