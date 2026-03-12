@@ -29,25 +29,23 @@
 
 // Wi-Fi (defaults can be overridden by main/credentials.h)
 #ifndef WIFI_SSID
-#define WIFI_SSID      "username"               // IPhone name (Cleo's IPhone)
+#define WIFI_SSID      "WIFI_SSID"
 #endif
 #ifndef WIFI_PASS
-#define WIFI_PASS      "password"               // IPhone hotspot password
+#define WIFI_PASS      "WIFI_PASS"
 #endif
 #ifndef MQTT_URI
-#define MQTT_URI       "address"                // Hard-coded Mosquitto broker
+#define MQTT_URI       "address"
 #endif
 #ifndef MQTT_USERNAME
-#define MQTT_USERNAME  "username"                       // Username (leave empty if no auth)
+#define MQTT_USERNAME  "username"
 #endif
 #ifndef MQTT_PASSWORD
-#define MQTT_PASSWORD  "password"                       // Password (leave empty if no auth)
+#define MQTT_PASSWORD  "password"
 #endif
 
 // Topic to publish raw water level + UID
-#ifndef TOPIC_WATER_LEVEL
 #define TOPIC_WATER_LEVEL "controller/water_level"
-#endif
 
 /* Logging tag used by ESP_LOG* macros */
 static const char *TAG = "water_sensor";
