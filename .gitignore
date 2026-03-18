@@ -96,3 +96,6 @@ sdkconfig*
 
 # Ignore local credentials and secrets
 /embedded_systems/esp32c6/main/credentials.h
+
+# Ignore dependency lock files
+embedded_systems/esp32c6/dependencies.lock
