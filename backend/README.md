@@ -1,36 +1,61 @@
 # MQTT Telemetry Backend
 
-Cloud backend for IoT flood mitigation system - MQTT broker and telemetry subscriber.
+Cloud backend for IoT flood mitigation system — MQTT broker, subscriber, and actuation service.
 
-## Quick Start
+
+## Services
+
+| Container | Role |
+|---|---|
+| `mqtt-broker` | Mosquitto 2.0 broker, mTLS on port 8883 |
+| `mqtt-subscriber` | Subscribes to `devices/+/water_level`, logs received data |
+| `mqtt-actuation` | Subscribes to `devices/+/water_level`, publishes commands to `devices/{id}/actuate` |
+
+## Local Development
+
+### Prerequisites
+- Docker + Docker Compose
+- OpenSSL (via WSL or Linux)
+
+### Setup
+
 ```bash
 cd backend
-cp .env.example .env
-# Edit .env with your credentials
-docker compose up -d
+
+# 1. Generate certs (run from backend/ — not from inside scripts/)
+bash scripts/generate-certs.sh broker localhost
+bash scripts/generate-certs.sh service subscriber-service
+bash scripts/generate-certs.sh service actuation-service
+
+# 2. Start services
+docker compose up -d --build
 ```
 
-See main project [README.md](../README.md) for overall architecture.
+### Testing the full feedback loop
 
-## Detailed Setup
+Generate a test device cert, then publish a water level message:
 
-### Local Development
 ```bash
-# 1. Configure environment
-cp .env.example .env
-nano .env
+bash scripts/generate-certs.sh device esp-test
 
-# 2. Create password file -> run in powershell
-docker run -it --rm -v "${PWD}\mosquitto\config:/mosquitto/config" eclipse-mosquitto:2.0 sh -c "mosquitto_passwd -c -b /mosquitto/config/passwd subscriber_client test1"
+docker exec mqtt-broker mosquitto_pub \
+  --cafile /mosquitto/certs/ca.crt \
+  --cert   /mosquitto/certs/esp-test.crt \
+  --key    /mosquitto/certs/esp-test.key \
+  -h localhost -p 8883 \
+  -t devices/esp-test/water_level \
+  -m '{"deviceId":"esp-test","water_level":42,"status":"ok","ts":"2026-03-24T00:00:00Z"}'
+```
 
-# 3. Start services
-docker compose up -d
+Check logs to verify both services received the message and actuation published a command:
 
-# 4. View logs
+```bash
 docker compose logs -f subscriber
+docker compose logs -f actuation
 ```
 
 ## Common Commands
+
 ```bash
 # Start
 docker compose up -d
@@ -38,72 +63,87 @@ docker compose up -d
 # Stop
 docker compose down
 
-# Logs
+# Logs (all services)
 docker compose logs -f
+
+# Logs (single service)
 docker compose logs -f subscriber
+docker compose logs -f actuation
 
-# Restart
-docker compose restart subscriber
+# Restart single service
+docker compose restart mosquitto
+docker compose restart actuation
 
-# Rebuild
+# Rebuild after code changes
 docker compose up -d --build
 
 # Status
 docker compose ps
 ```
 
-# Production Deployment Information
+## Certificate Management
 
-## VM Details
+Certs are generated once per environment and never committed to git.
+
+```bash
+# CA + broker cert (use VM public IP on the VM, localhost locally)
+bash scripts/generate-certs.sh broker <hostname-or-ip>
+
+# Backend service certs
+bash scripts/generate-certs.sh service subscriber-service
+bash scripts/generate-certs.sh service actuation-service
+
+# Per-device cert (repeat for each physical device)
+bash scripts/generate-certs.sh device <device-id>
+```
+
+`ca.crt` is the only file distributed to devices. All `*.key` files are private — never commit them.
+
+## Production Deployment (Oracle VM)
+
+### VM Details
 - **Public IP:** 150.230.122.17
 - **Region:** UK South (London)
 - **Shape:** VM.Standard.E2.1.Micro
 - **OS:** Ubuntu 22.04 LTS
-
-## Access Information
+- **Port:** 8883 (mTLS)
 
 ### SSH Access
-Prior to running this command please message @j-wilsons so that I can add your ssh keys to the vm
+Contact @j-wilsons to have your SSH key added to the VM.
 ```bash
 ssh -i /path/to/oracle-mqtt-vm.pem ubuntu@150.230.122.17
 ```
 
-### MQTT Broker
-- **Host:** 150.230.122.17
-- **Port:** 1883 (None TLS for the momment)
-- **Authentication:** Required
+### First-time VM Setup
 
-## Credentials
-
-**SENSITIVE**
-
-- **Subscriber Username:** subscriber_client
-- **Subscriber Password:** [contact @j-wilsons]
-- **Publisher Username:** publisher_client
-- **Publisher Password:** [contact @j-wilsons - needed for ESP32]
-
-## Quick Commands
 ```bash
-# SSH to VM
-ssh -i key.pem ubuntu@150.230.122.17
-
-# Navigate to project
 cd ~/iot_project/backend
 
-# View logs
-docker-compose logs -f subscriber
+# 1. Generate certs using the VM's public IP
+bash scripts/generate-certs.sh broker 150.230.122.17
+bash scripts/generate-certs.sh service subscriber-service
+bash scripts/generate-certs.sh service actuation-service
 
-# Restart services
-docker-compose restart
+# 2. Fix file ownership so the mosquitto container (uid 1883) can read them
+sudo chown -R 1883:1883 mosquitto/certs
+sudo chown 1883:1883 mosquitto/config/acl
+sudo chmod 700 mosquitto/config/acl
 
-# Update from git
-git pull origin main
-docker-compose up -d --build
-
-# Test publish
-mosquitto_pub -h localhost -p 1883 -u publisher_client -P 'PASSWORD' \
-  -t controller/telemetry \
-  -m '{"deviceId":"test","ts":"2026-02-16T20:00:00Z","temperature":22.0,"status":"ok"}'
+# 3. Start services
+docker compose up -d --build
 ```
 
-## Deployed: [D18/02/2026]
+### Updating the VM
+
+```bash
+cd ~/iot_project/backend
+git pull origin main
+docker compose up -d --build
+```
+
+### Adding a new device
+
+```bash
+bash scripts/generate-certs.sh device <device-id>
+# Copy <device-id>.crt, <device-id>.key, and ca.crt onto the device's filesystem
+```
