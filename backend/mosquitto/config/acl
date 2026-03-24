@@ -1,0 +1,18 @@
+# =============================================================================
+# Mosquitto ACL — mTLS identity-based access control
+# %u is substituted with the client's cert CN (via use_identity_as_username)
+# =============================================================================
+
+# Backend subscriber — read all device topics
+user subscriber-service
+topic read devices/#
+
+# Actuation service — read sensor topics, write actuation commands
+user actuation-service
+topic read devices/#
+topic write devices/#
+
+# Devices — publish sensor data and subscribe to their own actuation commands
+# %u matches the cert CN e.g. esp-a1b2c3 → devices/esp-a1b2c3/#
+pattern write devices/%u/#
+pattern read devices/%u/actuate
