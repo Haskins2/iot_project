@@ -93,3 +93,5 @@ Desktop.ini
 
 sdkconfig*
 .clangdembedded_systems/esp-eye/.cache/
+
+.claude
