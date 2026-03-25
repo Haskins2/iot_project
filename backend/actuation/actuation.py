@@ -34,6 +34,8 @@ CLIENT_CERT = os.getenv('CLIENT_CERT',   '/certs/actuation-service.crt')
 CLIENT_KEY = os.getenv('CLIENT_KEY',    '/certs/actuation-service.key')
 RECONNECT_DELAY = 5
 
+# Threshold for triggering an actuation command, 1900 picked as as sample sensor data when wet were over 1900
+ALERT_THRESHOLD = 1900
 
 class ActuationService:
 
@@ -138,12 +140,11 @@ class ActuationService:
             logger.info(f"LOG - INFO: Analysing water level for device {device_id}: {water_level}")
 
             # --- TODO: decision logic goes here ---
-            command = {
-                "deviceId": device_id,
-                "ts": timestamp,
-                "action": "none",    # TODO: replace with derived action e.g. "pump_on"
-                "reason": "stub"     # TODO: replace with derived reason
-            }
+            water_level = float(data["water_level"])
+            if water_level >= ALERT_THRESHOLD:
+                command = {"deviceId": device_id, "ts": timestamp, "action": "pump_on", "reason": "water above threshold"}
+            else:
+                command = {"deviceId": device_id, "ts": timestamp, "action": "pump_off", "reason": "water normal"}
             # --------------------------------------
 
             self.publish_command(device_id, command)
