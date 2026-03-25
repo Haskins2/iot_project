@@ -1,0 +1,6 @@
+{
+  "water_sensor": { "raw": 81 },
+  "raindrop_sensor": { "digital": 1, "analog": 2017 },
+  "ble_connected": true,
+  "timestamp_ms": 467949
+}
