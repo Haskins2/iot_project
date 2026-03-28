@@ -7,6 +7,7 @@ execute_process(
     OUTPUT_VARIABLE GIT_VERSION
     OUTPUT_STRIP_TRAILING_WHITESPACE
 )
+string(REGEX REPLACE "^v" "" GIT_VERSION "${GIT_VERSION}")
 add_compile_definitions(CURRENT_VERSION="${GIT_VERSION}")
 
 include($ENV{IDF_PATH}/tools/cmake/project.cmake)

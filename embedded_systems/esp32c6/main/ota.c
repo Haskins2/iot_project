@@ -50,8 +50,9 @@ static bool ota_check_new_version_available(void) {
     char response_buf[256] = {0};
 
     esp_http_client_config_t version_config = {
-        .url      = VERSION_URL,
-        .cert_pem = github_pem_buf,
+        .url                    = VERSION_URL,
+        .cert_pem               = github_pem_buf,
+        .max_redirection_count  = 5,
     };
 
     esp_http_client_handle_t client = esp_http_client_init(&version_config);
@@ -76,6 +77,8 @@ static bool ota_check_new_version_available(void) {
         ESP_LOGE(TAG, "Failed to read version response");
         return false;
     }
+
+    ESP_LOGI(TAG, "Version response: %s", response_buf);
 
     cJSON *json = cJSON_Parse(response_buf);
     if (!json) {
