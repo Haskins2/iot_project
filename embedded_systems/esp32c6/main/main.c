@@ -18,6 +18,7 @@
 
 #include <stdio.h>
 #include <stdbool.h>
+#include <inttypes.h>
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -41,6 +42,11 @@ static const char *TAG = "flood_main";
 
 /* JSON buffer — comfortably sized for our packet */
 #define JSON_BUF_SIZE 256
+
+#define DEFAULT_POLL_INTERVAL_MS  1000
+
+/* Sensor polling interval — modifiable at runtime via SetPollIntervalMs() */
+static uint32_t s_poll_interval_ms = DEFAULT_POLL_INTERVAL_MS;
 
 /* Latest sensor readings — shared with BLE image callback via extern */
 water_data_t    g_latest_water = { 0 };
@@ -134,7 +140,27 @@ void app_main(void)
             prev_flood_state = flood_now;
         }
 
-        /* ---- Wait 1 second ---- */
-        vTaskDelay(pdMS_TO_TICKS(1000));
+        /* ---- Wait for next poll ---- */
+        vTaskDelay(pdMS_TO_TICKS(s_poll_interval_ms));
     }
+}
+
+/* ===================================================================== */
+/*  Cloud-facing API                                                      */
+/* ===================================================================== */
+
+void SetPollIntervalMs(uint32_t interval_ms)
+{
+    if (interval_ms < 100) {
+        ESP_LOGW(TAG, "Poll interval clamped to 100 ms (requested %" PRIu32 ")",
+                 interval_ms);
+        interval_ms = 100;
+    }
+    s_poll_interval_ms = interval_ms;
+    ESP_LOGI(TAG, "Poll interval set to %" PRIu32 " ms", s_poll_interval_ms);
+}
+
+uint32_t GetPollIntervalMs(void)
+{
+    return s_poll_interval_ms;
 }
