@@ -29,6 +29,7 @@
 #include "servo.h"
 #include "ble_client.h"
 #include "sensor_packet.h"
+#include "image_reassembly.h"
 
 /* ===================================================================== */
 /*  DEBUG flag — set to true to enable local actuation logic for testing  */
@@ -39,6 +40,10 @@ static const char *TAG = "flood_main";
 
 /* JSON buffer — comfortably sized for our packet */
 #define JSON_BUF_SIZE 256
+
+/* Latest sensor readings — shared with BLE image callback via extern */
+water_data_t    g_latest_water = { 0 };
+raindrop_data_t g_latest_rain  = { 0 };
 
 void app_main(void)
 {
@@ -62,6 +67,7 @@ void app_main(void)
     ESP_ERROR_CHECK(WaterSensorInit(adc1_handle));
     ESP_ERROR_CHECK(ServoInit());
     ESP_ERROR_CHECK(BleClientInit());   /* non-blocking — scans in background */
+    ESP_ERROR_CHECK(image_reassembly_init());
 
     ESP_LOGI(TAG, "All subsystems initialised — entering sensor loop");
 
@@ -76,6 +82,10 @@ void app_main(void)
 
         esp_err_t w_err = RetrieveWaterSensorData(&water);
         esp_err_t r_err = RetrieveRaindropSensorData(&rain);
+
+        /* Update shared globals for BLE image callback */
+        g_latest_water = water;
+        g_latest_rain  = rain;
 
         if (w_err != ESP_OK) {
             ESP_LOGE(TAG, "Water sensor read error: %s", esp_err_to_name(w_err));

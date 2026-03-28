@@ -6,6 +6,8 @@ idf_component_register(
         "servo.c"
         "ble_client.c"
         "sensor_packet.c"
+        "image_reassembly.c"
+        "image_encoder.c"
     INCLUDE_DIRS "."
     REQUIRES
         driver
@@ -13,4 +15,5 @@ idf_component_register(
         nvs_flash
         bt
         esp_timer
+        mbedtls
 )

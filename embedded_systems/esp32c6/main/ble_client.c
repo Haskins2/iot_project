@@ -13,6 +13,10 @@
  */
 
 #include "ble_client.h"
+#include "image_reassembly.h"
+#include "image_encoder.h"
+#include "water_sensor.h"
+#include "raindrop_sensor.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -35,6 +39,7 @@
 /* ── Constants ──────────────────────────────────────────────────────────── */
 #define TAG                   "ble_client"
 
+#define BLE_STATIC_PASSKEY    123456
 #define REMOTE_SERVICE_UUID   0xABCD
 #define REMOTE_CHAR_IMG_UUID  0xFF01   /* Image data (read + notify) */
 #define REMOTE_CHAR_TRIG_UUID 0xFF02   /* Trigger capture (write)    */
@@ -235,6 +240,32 @@ static void gap_event_handler(esp_gap_ble_cb_event_t event,
                  param->update_conn_params.timeout);
         break;
 
+    case ESP_GAP_BLE_SEC_REQ_EVT:
+        ESP_LOGI(TAG, "Security request from server — accepting");
+        esp_ble_gap_security_rsp(param->ble_security.ble_req.bd_addr, true);
+        break;
+
+    case ESP_GAP_BLE_AUTH_CMPL_EVT: {
+        esp_bd_addr_t bd_addr;
+        memcpy(bd_addr, param->ble_security.auth_cmpl.bd_addr, sizeof(esp_bd_addr_t));
+        ESP_LOGI(TAG, "Auth complete: addr=%02x:%02x:%02x:%02x:%02x:%02x, "
+                 "success=%d, auth_mode=0x%x",
+                 bd_addr[0], bd_addr[1], bd_addr[2],
+                 bd_addr[3], bd_addr[4], bd_addr[5],
+                 param->ble_security.auth_cmpl.success,
+                 param->ble_security.auth_cmpl.auth_mode);
+        if (!param->ble_security.auth_cmpl.success) {
+            ESP_LOGE(TAG, "Authentication failed, reason=0x%x",
+                     param->ble_security.auth_cmpl.fail_reason);
+        }
+        break;
+    }
+
+    case ESP_GAP_BLE_PASSKEY_REQ_EVT:
+        ESP_LOGI(TAG, "Passkey request — replying with static passkey");
+        esp_ble_passkey_reply(param->ble_security.ble_req.bd_addr, true, BLE_STATIC_PASSKEY);
+        break;
+
     default:
         break;
     }
@@ -273,6 +304,7 @@ static void gattc_profile_event_handler(esp_gattc_cb_event_t event,
                param->open.remote_bda, sizeof(esp_bd_addr_t));
 
         esp_ble_gattc_send_mtu_req(gattc_if, param->open.conn_id);
+        esp_ble_set_encryption(param->open.remote_bda, ESP_BLE_SEC_ENCRYPT_MITM);
         break;
 
     /* ── MTU negotiated ──────────────────────────────────────────────── */
@@ -431,9 +463,38 @@ static void gattc_profile_event_handler(esp_gattc_cb_event_t event,
 
     /* ── Incoming notification data (image chunks on 0xFF01) ─────────── */
     case ESP_GATTC_NOTIFY_EVT:
-        ESP_LOGI(TAG, "BLE RX (%d bytes) on handle %d",
-                 param->notify.value_len,
-                 param->notify.handle);
+        image_reassembly_feed_chunk(param->notify.value, param->notify.value_len);
+
+        if (image_reassembly_is_complete()) {
+            const uint8_t *jpeg_data;
+            size_t jpeg_len;
+            if (image_reassembly_get_image(&jpeg_data, &jpeg_len) == ESP_OK) {
+                ESP_LOGI(TAG, "JPEG reassembly complete: %u bytes", (unsigned)jpeg_len);
+
+                /* Get latest sensor readings (updated by main loop) */
+                extern water_data_t    g_latest_water;
+                extern raindrop_data_t g_latest_rain;
+
+                char *json_payload = NULL;
+                size_t json_len = 0;
+                esp_err_t err = build_image_mqtt_payload(
+                    jpeg_data, jpeg_len,
+                    g_latest_water.raw,
+                    g_latest_rain.digital,
+                    g_latest_rain.analog,
+                    &json_payload, &json_len);
+
+                if (err == ESP_OK && json_payload) {
+                    ESP_LOGI(TAG, "Image MQTT payload ready: %u bytes", (unsigned)json_len);
+                    /* TODO: Publish json_payload over MQTT
+                     * mqtt_publish(topic, json_payload, json_len);
+                     */
+                    free(json_payload);
+                }
+
+                image_reassembly_reset();
+            }
+        }
         break;
 
     /* ── Disconnected — reset state and rescan ───────────────────────── */
@@ -509,6 +570,25 @@ esp_err_t BleClientInit(void)
 
     ESP_ERROR_CHECK(esp_bluedroid_init());
     ESP_ERROR_CHECK(esp_bluedroid_enable());
+
+    /* Configure BLE security (SMP passkey pairing) */
+    uint32_t passkey = BLE_STATIC_PASSKEY;
+    esp_ble_gap_set_security_param(ESP_BLE_SM_SET_STATIC_PASSKEY, &passkey, sizeof(uint32_t));
+
+    uint8_t auth_req = ESP_LE_AUTH_REQ_SC_MITM_BOND;
+    esp_ble_gap_set_security_param(ESP_BLE_SM_AUTHEN_REQ_MODE, &auth_req, sizeof(uint8_t));
+
+    uint8_t iocap = ESP_IO_CAP_IN;
+    esp_ble_gap_set_security_param(ESP_BLE_SM_IOCAP_MODE, &iocap, sizeof(uint8_t));
+
+    uint8_t key_size = 16;
+    esp_ble_gap_set_security_param(ESP_BLE_SM_MAX_KEY_SIZE, &key_size, sizeof(uint8_t));
+
+    uint8_t init_key = ESP_BLE_ENC_KEY_MASK | ESP_BLE_ID_KEY_MASK;
+    esp_ble_gap_set_security_param(ESP_BLE_SM_SET_INIT_KEY, &init_key, sizeof(uint8_t));
+
+    uint8_t rsp_key = ESP_BLE_ENC_KEY_MASK | ESP_BLE_ID_KEY_MASK;
+    esp_ble_gap_set_security_param(ESP_BLE_SM_SET_RSP_KEY, &rsp_key, sizeof(uint8_t));
 
     ESP_ERROR_CHECK(esp_ble_gattc_register_callback(gattc_event_handler));
     ESP_ERROR_CHECK(esp_ble_gap_register_callback(gap_event_handler));

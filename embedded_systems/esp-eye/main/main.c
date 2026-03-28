@@ -52,6 +52,7 @@ static const char *TAG = "ESP_EYE";
 #define PROFILE_NUM         1
 
 /* ── Chunked transfer tuning ────────────────────────────────────────────── */
+#define BLE_STATIC_PASSKEY  123456          /* Static passkey for SMP pairing  */
 #define CHUNK_DELAY_MS      20              /* Pacing delay between BLE notifs */
 #define MAX_SEND_RETRY      5               /* Retries on send_indicate fail   */
 #define RETRY_DELAY_MS      50              /* Backoff between retries         */
@@ -177,7 +178,7 @@ static const esp_gatts_attr_db_t gatt_db[IDX_NB] = {
         {
             ESP_UUID_LEN_16,
             (uint8_t *)&img_char_uuid,
-            ESP_GATT_PERM_READ,
+            ESP_GATT_PERM_READ_ENCRYPTED,
             512,                          /* max_length — matches MTU   */
             sizeof(img_char_init_val),
             (uint8_t *)img_char_init_val
@@ -190,7 +191,7 @@ static const esp_gatts_attr_db_t gatt_db[IDX_NB] = {
         {
             ESP_UUID_LEN_16,
             (uint8_t *)&char_client_config_uuid,
-            ESP_GATT_PERM_READ | ESP_GATT_PERM_WRITE,
+            ESP_GATT_PERM_READ_ENCRYPTED | ESP_GATT_PERM_WRITE_ENCRYPTED,
             sizeof(cccd_value),
             sizeof(cccd_value),
             (uint8_t *)cccd_value
@@ -216,7 +217,7 @@ static const esp_gatts_attr_db_t gatt_db[IDX_NB] = {
         {
             ESP_UUID_LEN_16,
             (uint8_t *)&trig_char_uuid,
-            ESP_GATT_PERM_WRITE,
+            ESP_GATT_PERM_WRITE_ENCRYPTED,
             sizeof(trig_char_init_val),
             sizeof(trig_char_init_val),
             (uint8_t *)trig_char_init_val
@@ -332,10 +333,10 @@ static const camera_config_t CAMERA_CONFIG = {
 // FRAMESIZE_UXGA (1600x1200)
 
     .pixel_format = PIXFORMAT_JPEG,
-    .frame_size   = FRAMESIZE_HD,         /* 1280x720 (720p)                 */
+    .frame_size   = FRAMESIZE_QVGA,        /* 320x240 — fits in DRAM          */
     .jpeg_quality = 12,                   /* 0–63, lower = better quality    */
-    .fb_count     = 1,                    /* 1 framebuffer in PSRAM          */
-    .fb_location  = CAMERA_FB_IN_PSRAM,   /* PSRAM needed for HD             */
+    .fb_count     = 1,                    /* 1 framebuffer in DRAM           */
+    .fb_location  = CAMERA_FB_IN_DRAM,    /* No PSRAM needed for QVGA        */
     .grab_mode    = CAMERA_GRAB_WHEN_EMPTY,
 };
 
@@ -595,6 +596,31 @@ static void gap_event_handler(esp_gap_ble_cb_event_t event,
                  param->update_conn_params.timeout);
         break;
 
+    case ESP_GAP_BLE_SEC_REQ_EVT:
+        ESP_LOGI(TAG, "Security request from client — accepting");
+        esp_ble_gap_security_rsp(param->ble_security.ble_req.bd_addr, true);
+        break;
+
+    case ESP_GAP_BLE_AUTH_CMPL_EVT: {
+        esp_bd_addr_t bd_addr;
+        memcpy(bd_addr, param->ble_security.auth_cmpl.bd_addr, sizeof(esp_bd_addr_t));
+        ESP_LOGI(TAG, "Auth complete: addr=%02x:%02x:%02x:%02x:%02x:%02x, "
+                 "success=%d, auth_mode=0x%x",
+                 bd_addr[0], bd_addr[1], bd_addr[2],
+                 bd_addr[3], bd_addr[4], bd_addr[5],
+                 param->ble_security.auth_cmpl.success,
+                 param->ble_security.auth_cmpl.auth_mode);
+        if (!param->ble_security.auth_cmpl.success) {
+            ESP_LOGE(TAG, "Authentication failed, reason=0x%x",
+                     param->ble_security.auth_cmpl.fail_reason);
+        }
+        break;
+    }
+
+    case ESP_GAP_BLE_PASSKEY_NOTIF_EVT:
+        ESP_LOGI(TAG, "Passkey notify: %" PRIu32, param->ble_security.key_notif.passkey);
+        break;
+
     default:
         break;
     }
@@ -809,6 +835,25 @@ void app_main(void)
     /* ── 5. Init and enable Bluedroid host stack ──────────────────────── */
     ESP_ERROR_CHECK(esp_bluedroid_init());
     ESP_ERROR_CHECK(esp_bluedroid_enable());
+
+    /* ── 5b. Configure BLE security (SMP passkey pairing) ─────────────── */
+    uint32_t passkey = BLE_STATIC_PASSKEY;
+    esp_ble_gap_set_security_param(ESP_BLE_SM_SET_STATIC_PASSKEY, &passkey, sizeof(uint32_t));
+
+    uint8_t auth_req = ESP_LE_AUTH_REQ_SC_MITM_BOND;
+    esp_ble_gap_set_security_param(ESP_BLE_SM_AUTHEN_REQ_MODE, &auth_req, sizeof(uint8_t));
+
+    uint8_t iocap = ESP_IO_CAP_OUT;
+    esp_ble_gap_set_security_param(ESP_BLE_SM_IOCAP_MODE, &iocap, sizeof(uint8_t));
+
+    uint8_t key_size = 16;
+    esp_ble_gap_set_security_param(ESP_BLE_SM_MAX_KEY_SIZE, &key_size, sizeof(uint8_t));
+
+    uint8_t init_key = ESP_BLE_ENC_KEY_MASK | ESP_BLE_ID_KEY_MASK;
+    esp_ble_gap_set_security_param(ESP_BLE_SM_SET_INIT_KEY, &init_key, sizeof(uint8_t));
+
+    uint8_t rsp_key = ESP_BLE_ENC_KEY_MASK | ESP_BLE_ID_KEY_MASK;
+    esp_ble_gap_set_security_param(ESP_BLE_SM_SET_RSP_KEY, &rsp_key, sizeof(uint8_t));
 
     /* ── 6. Register GATTS and GAP callbacks ──────────────────────────── */
     ESP_ERROR_CHECK(esp_ble_gatts_register_callback(gatts_event_handler));
