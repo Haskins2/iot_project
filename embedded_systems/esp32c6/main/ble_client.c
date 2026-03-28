@@ -486,6 +486,14 @@ static void gattc_profile_event_handler(esp_gattc_cb_event_t event,
 
                 if (err == ESP_OK && json_payload) {
                     ESP_LOGI(TAG, "Image MQTT payload ready: %u bytes", (unsigned)json_len);
+
+                    /* Dump full payload to UART for capture.
+                     * Uses printf (not ESP_LOGI) to avoid the ~512 byte truncation.
+                     * Copy from monitor or pipe: idf.py monitor | tee payload.json */
+                    printf("\n[MQTT_PAYLOAD_START]\n");
+                    printf("%s\n", json_payload);
+                    printf("[MQTT_PAYLOAD_END]\n\n");
+
                     /* TODO: Publish json_payload over MQTT
                      * mqtt_publish(topic, json_payload, json_len);
                      */
