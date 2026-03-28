@@ -27,6 +27,7 @@
 #include "raindrop_sensor.h"
 #include "water_sensor.h"
 #include "servo.h"
+#include "pump.h"
 #include "ble_client.h"
 #include "sensor_packet.h"
 #include "image_reassembly.h"
@@ -66,6 +67,7 @@ void app_main(void)
     ESP_ERROR_CHECK(RaindropSensorInit(adc1_handle));
     ESP_ERROR_CHECK(WaterSensorInit(adc1_handle));
     ESP_ERROR_CHECK(ServoInit());
+    ESP_ERROR_CHECK(PumpInit());
     ESP_ERROR_CHECK(BleClientInit());   /* non-blocking — scans in background */
     ESP_ERROR_CHECK(image_reassembly_init());
 
@@ -120,11 +122,13 @@ void app_main(void)
                 /* Rising edge — both sensors just triggered */
                 ESP_LOGW(TAG, "[DEBUG] Flood condition detected — actuating!");
                 ActuateServo(90);
+                PumpOn();
                 TriggerCameraCapture();   /* safe even if BLE is down */
             } else if (!flood_now && prev_flood_state) {
                 /* Falling edge — condition cleared */
-                ESP_LOGI(TAG, "[DEBUG] Flood condition cleared — resetting servo");
+                ESP_LOGI(TAG, "[DEBUG] Flood condition cleared — resetting actuators");
                 ActuateServo(0);
+                PumpOff();
             }
 
             prev_flood_state = flood_now;

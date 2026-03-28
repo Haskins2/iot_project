@@ -353,7 +353,13 @@ static esp_err_t camera_init(void)
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "Camera init failed: 0x%x", err);
     } else {
-        ESP_LOGI(TAG, "Camera initialised (QVGA JPEG, quality %d)",
+        /* ESP-EYE has the OV2640 mounted upside-down — flip both axes */
+        sensor_t *s = esp_camera_sensor_get();
+        if (s) {
+            s->set_vflip(s, 1);
+            s->set_hmirror(s, 1);
+        }
+        ESP_LOGI(TAG, "Camera initialised (QVGA JPEG, quality %d, flipped)",
                  CAMERA_CONFIG.jpeg_quality);
     }
     return err;
@@ -468,6 +474,13 @@ static void capture_task(void *arg)
         ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
 
         ESP_LOGI(TAG, "Capture triggered — grabbing frame...");
+
+        /* Discard the stale frame sitting in the buffer so the driver
+         * captures a fresh one on the next fb_get() call.              */
+        camera_fb_t *stale = esp_camera_fb_get();
+        if (stale) {
+            esp_camera_fb_return(stale);
+        }
 
         /* ── Measure camera capture time ─────────────────────────────── */
         int64_t t_capture_start = esp_timer_get_time();
