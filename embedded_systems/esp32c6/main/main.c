@@ -2,7 +2,6 @@
  * Water Sensing with Servo Actuation
  */
 
-#include <stdio.h>
 #include <string.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -10,15 +9,22 @@
 #include "esp_adc/adc_oneshot.h"
 #include "driver/ledc.h"
 #include "nvs_flash.h"
+#include "nvs.h"
 #include "esp_wifi.h"
 #include "esp_event.h"
 #include "esp_netif.h"
-#include "esp_system.h"
 #include "mqtt_client.h"
+#include "esp_tls.h"
+#include "ota.h"
 
 /* ------- Configuration ------- */
 
-// Optionally include credentials from a gitignored file.
+static char ca_crt_buf[4096];
+static char client_crt_buf[4096];
+static char client_key_buf[4096];
+static char device_id_buf[64];
+
+// Check for credentials.h
 #if defined(__has_include)
 #  if __has_include("credentials.h")
 #    include "credentials.h"
@@ -37,15 +43,14 @@
 #ifndef MQTT_URI
 #define MQTT_URI       "address"
 #endif
-#ifndef MQTT_USERNAME
-#define MQTT_USERNAME  "username"
-#endif
-#ifndef MQTT_PASSWORD
-#define MQTT_PASSWORD  "password"
-#endif
 
-// Topic to publish raw water level + UID
-#define TOPIC_WATER_LEVEL "controller/water_level"
+// Replace the #defines with these globals
+static char MQTT_TOPIC_WATER_DATA[128];
+static char MQTT_TOPIC_RAIN_DATA[128];
+static char MQTT_TOPIC_ACTUATION[128];
+
+/* ── Placeholder for rain data – replace with real sensor read ────────── */
+static int rain_raw = 0;  // TODO: populate from your rain sensor
 
 /* Logging tag used by ESP_LOG* macros */
 static const char *TAG = "water_sensor";
@@ -85,6 +90,93 @@ static void log_error_if_nonzero(const char *message, int error_code)
     }
 }
 
+static esp_err_t load_certs_from_nvs(void)
+{
+    nvs_handle_t handle;
+    esp_err_t err;
+
+    err = nvs_open("certs", NVS_READONLY, &handle);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to open NVS namespace 'certs': %s", esp_err_to_name(err));
+        return err;
+    }
+
+    size_t ca_len   = sizeof(ca_crt_buf);
+    size_t crt_len  = sizeof(client_crt_buf);
+    size_t key_len  = sizeof(client_key_buf);
+    size_t id_len = sizeof(device_id_buf);
+
+    err = nvs_get_blob(handle, "ca_crt", ca_crt_buf, &ca_len);
+    if (err != ESP_OK) { ESP_LOGE(TAG, "Missing key: ca_crt -> %s", esp_err_to_name(err)); goto fail; }
+
+    err = nvs_get_blob(handle, "client_crt", client_crt_buf, &crt_len);
+    if (err != ESP_OK) { ESP_LOGE(TAG, "Missing key: client_crt -> %s", esp_err_to_name(err)); goto fail; }
+
+    err = nvs_get_blob(handle, "client_key", client_key_buf, &key_len);
+    if (err != ESP_OK) { ESP_LOGE(TAG, "Missing key: client_key -> %s", esp_err_to_name(err)); goto fail; }
+
+    err = nvs_get_str(handle, "device_id", device_id_buf, &id_len);
+    if (err != ESP_OK) { ESP_LOGE(TAG, "Missing key: device_id -> %s", esp_err_to_name(err)); goto fail; }
+
+    ESP_LOGI(TAG, "Certs loaded from NVS (ca=%d, crt=%d, key=%d bytes)", ca_len, crt_len, key_len);
+    ESP_LOGI(TAG, "Device ID: %s", device_id_buf);
+    nvs_close(handle);
+
+    snprintf(MQTT_TOPIC_WATER_DATA, sizeof(MQTT_TOPIC_WATER_DATA), "devices/%s/water_data", device_id_buf);
+    snprintf(MQTT_TOPIC_RAIN_DATA,  sizeof(MQTT_TOPIC_RAIN_DATA),  "devices/%s/rain_data",  device_id_buf);
+    snprintf(MQTT_TOPIC_ACTUATION,  sizeof(MQTT_TOPIC_ACTUATION),  "devices/%s/actuation",  device_id_buf);
+
+    ESP_LOGI(TAG, "Topics: %s, %s, %s", MQTT_TOPIC_WATER_DATA, MQTT_TOPIC_RAIN_DATA, MQTT_TOPIC_ACTUATION);
+
+    return ESP_OK;
+
+fail:
+    ESP_LOGE(TAG, "Failed to load cert from NVS: %s", esp_err_to_name(err));
+    nvs_close(handle);
+    return err;
+}
+
+/* ------- Servo Control ------- */
+
+static void set_servo_angle(int angle)
+{
+    // Clamp angle to valid range
+    if (angle < 0)
+        angle = 0;
+    if (angle > 180)
+        angle = 180;
+
+    // Convert pulse width (µs) to duty cycle ticks (from datasheet pdf)
+    // Formula: ticks = (pulse_us / period_us) * max_ticks
+    // At 50Hz: period = 20000µs, max_ticks = 65536 (16-bit)
+    uint32_t min_duty = (SERVO_MIN_PULSE_US * 65536) / 20000; // ~1638
+    uint32_t max_duty = (SERVO_MAX_PULSE_US * 65536) / 20000; // ~8192
+    uint32_t duty = min_duty + ((angle * (max_duty - min_duty)) / 180);
+
+    ESP_LOGI(TAG, "Servo: angle=%d°, duty=%lu", angle, duty);
+    ledc_set_duty(LEDC_LOW_SPEED_MODE, SERVO_CHANNEL, duty);
+    ledc_update_duty(LEDC_LOW_SPEED_MODE, SERVO_CHANNEL);
+}
+
+static void handle_actuation(const char *data, int data_len)
+{
+    ESP_LOGI(TAG, "MQTT: Actuation received: %.*s", data_len, data);
+
+    // Example: once you know the payload shape you might parse it like:
+    //
+    //   if (strstr(data, "\"pump\":1"))  pump_on();
+    //   if (strstr(data, "\"pump\":0"))  pump_off();
+    //
+    // Or use cJSON for proper parsing:
+    //
+    //   cJSON *root = cJSON_ParseWithLength(data, data_len);
+    //   cJSON *pump = cJSON_GetObjectItem(root, "pump");
+    //   if (cJSON_IsNumber(pump)) { ... }
+    //   cJSON_Delete(root);
+
+    // TODO: implement actuation logic here
+}
+
 /*
  * @brief Event handler registered to receive MQTT events
  *
@@ -118,9 +210,17 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_
         ESP_LOGI(TAG, "MQTT_EVENT_PUBLISHED, msg_id=%d", event->msg_id);
         break;
     case MQTT_EVENT_DATA:
-        ESP_LOGI(TAG, "MQTT_EVENT_DATA");
-        printf("TOPIC=%.*s\r\n", event->topic_len, event->topic);
-        printf("DATA=%.*s\r\n", event->data_len, event->data);
+        // Safely null-terminate the topic and data for logging/parsing
+        char topic[64]  = {0};
+        char data[256]  = {0};
+        snprintf(topic, sizeof(topic), "%.*s", event->topic_len, event->topic);
+        snprintf(data,  sizeof(data),  "%.*s", event->data_len,  event->data);
+
+        ESP_LOGI(TAG, "MQTT: Received [%s] -> %s", topic, data);
+
+        if (strncmp(topic, MQTT_TOPIC_ACTUATION, event->topic_len) == 0) {
+            handle_actuation(data, event->data_len);
+        }
         break;
     case MQTT_EVENT_ERROR:
         ESP_LOGI(TAG, "MQTT_EVENT_ERROR");
@@ -139,10 +239,28 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_
 
 static void mqtt_app_start(void)
 {
+    if (load_certs_from_nvs() != ESP_OK) {
+        ESP_LOGE(TAG, "Cannot start MQTT without certificates");
+        return;
+    }
+
     esp_mqtt_client_config_t mqtt_cfg = {
-        .broker.address.uri = MQTT_URI,
-        .credentials.username = MQTT_USERNAME,
-        .credentials.authentication.password = MQTT_PASSWORD,
+        .broker = {
+            .address.uri = MQTT_URI,
+            .verification = {
+                .certificate     = ca_crt_buf,
+                .certificate_len = strlen(ca_crt_buf) + 1,
+            },
+        },
+        .credentials = {
+            .client_id = device_id_buf,
+            .authentication = {
+                .certificate     = client_crt_buf,
+                .certificate_len = strlen(client_crt_buf) + 1,
+                .key             = client_key_buf,
+                .key_len         = strlen(client_key_buf) + 1,
+            },
+        },
     };
 
     mqtt_client = esp_mqtt_client_init(&mqtt_cfg);
@@ -152,7 +270,7 @@ static void mqtt_app_start(void)
     }
     ESP_ERROR_CHECK(esp_mqtt_client_register_event(mqtt_client, ESP_EVENT_ANY_ID, mqtt_event_handler, NULL));
     ESP_ERROR_CHECK(esp_mqtt_client_start(mqtt_client));
-    ESP_LOGI(TAG, "MQTT: Connecting to %s (user: %s)", MQTT_URI, MQTT_USERNAME);
+    ESP_LOGI(TAG, "MQTT: Connecting to %s (user: %s)", MQTT_URI, device_id_buf);
 }
 
 // ---------- Wi-Fi event handler ----------
@@ -224,32 +342,9 @@ static bool wifi_init_sta(void)
     }
 }
 
-/* ------- Servo Control ------- */
-
-static void set_servo_angle(int angle)
-{
-    // Clamp angle to valid range
-    if (angle < 0)
-        angle = 0;
-    if (angle > 180)
-        angle = 180;
-
-    // Convert pulse width (µs) to duty cycle ticks (from datasheet pdf)
-    // Formula: ticks = (pulse_us / period_us) * max_ticks
-    // At 50Hz: period = 20000µs, max_ticks = 65536 (16-bit)
-    uint32_t min_duty = (SERVO_MIN_PULSE_US * 65536) / 20000; // ~1638
-    uint32_t max_duty = (SERVO_MAX_PULSE_US * 65536) / 20000; // ~8192
-    uint32_t duty = min_duty + ((angle * (max_duty - min_duty)) / 180);
-
-    ESP_LOGI(TAG, "Servo: angle=%d°, duty=%lu", angle, duty);
-    ledc_set_duty(LEDC_LOW_SPEED_MODE, SERVO_CHANNEL, duty);
-    ledc_update_duty(LEDC_LOW_SPEED_MODE, SERVO_CHANNEL);
-}
-
 void app_main(void)
 {
 
-    // NVS for Wi-Fi
     esp_err_t ret = nvs_flash_init();
     if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
         ESP_ERROR_CHECK(nvs_flash_erase());
@@ -264,6 +359,9 @@ void app_main(void)
             vTaskDelay(pdMS_TO_TICKS(1000));
         }
     }
+
+    // Mark current firmware as valid (prevents rollback)
+    ota_mark_valid();
 
     // ADC INIT
     adc_oneshot_unit_handle_t adc1_handle;
@@ -299,6 +397,9 @@ void app_main(void)
     /* Start MQTT */
     mqtt_app_start();
 
+    // Start OTA task (Wi-Fi already connected, checks immediately then every 24hrs)
+    xTaskCreate(ota_task, "ota_task", 8192, NULL, 5, NULL);
+
     ESP_LOGI(TAG, "Starting main loop...");
 
     while (1)
@@ -319,10 +420,20 @@ void app_main(void)
         /* Publish reading to MQTT if connected */
         if (mqtt_client && mqtt_connected) {
             char payload[128];
-            int len = snprintf(payload, sizeof(payload), "{\"water_raw\":%d}", adc_raw);
+            int len;
+
+            // Water data
+            len = snprintf(payload, sizeof(payload), "{\"water_level\":%d}", adc_raw);
             if (len > 0 && len < (int)sizeof(payload)) {
-                int msg_id = esp_mqtt_client_publish(mqtt_client, "controller/water_level", payload, 0, 1, 0);
-                ESP_LOGI(TAG, "MQTT: Published msg_id=%d", msg_id);
+                int msg_id = esp_mqtt_client_publish(mqtt_client, MQTT_TOPIC_WATER_DATA, payload, 0, 1, 0);
+                ESP_LOGI(TAG, "MQTT: Published water_data msg_id=%d", msg_id);
+            }
+
+            // Rain data
+            len = snprintf(payload, sizeof(payload), "{\"rain_raw\":%d}", rain_raw);
+            if (len > 0 && len < (int)sizeof(payload)) {
+                int msg_id = esp_mqtt_client_publish(mqtt_client, MQTT_TOPIC_RAIN_DATA, payload, 0, 1, 0);
+                ESP_LOGI(TAG, "MQTT: Published rain_data msg_id=%d", msg_id);
             }
         }
 
