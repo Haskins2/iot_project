@@ -26,7 +26,8 @@ jobs:
 
       - name: Create version.json
         run: |
-          echo '{"version": "${{ github.ref_name }}"}' > version.json
+          VERSION=${{ github.ref_name }}
+          echo '{"version": "'${VERSION#v}'"}' > version.json
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v1
