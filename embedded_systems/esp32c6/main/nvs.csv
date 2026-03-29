@@ -1,7 +1,0 @@
-key,type,encoding,value
-certs,namespace,,
-ca_crt,file,binary,C:\Users\cleom\OneDrive\Desktop\IOT\iot_project\embedded_systems\esp32c6\certs\ca.crt
-client_key,file,binary,C:\Users\cleom\OneDrive\Desktop\IOT\iot_project\embedded_systems\esp32c6\certs\client.key
-client_crt,file,binary,C:\Users\cleom\OneDrive\Desktop\IOT\iot_project\embedded_systems\esp32c6\certs\client.crt
-github_pem,file,binary,C:\Users\cleom\OneDrive\Desktop\IOT\iot_project\embedded_systems\esp32c6\certs\github.pem
-device_id,data,string,esp32-master-01
