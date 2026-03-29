@@ -394,11 +394,13 @@ void app_main(void)
         .hpoint = 0};
     ESP_ERROR_CHECK(ledc_channel_config(&channel_conf));
 
-    /* Start MQTT */
-    mqtt_app_start();
-
     // Start OTA task (Wi-Fi already connected, checks immediately then every 24hrs)
     xTaskCreate(ota_task, "ota_task", 8192, NULL, 5, NULL);
+
+    vTaskDelay(pdMS_TO_TICKS(10000)); // give OTA time to complete version check
+
+    /* Start MQTT */
+    mqtt_app_start();
 
     ESP_LOGI(TAG, "Starting main loop...");
 

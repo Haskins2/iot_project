@@ -50,9 +50,9 @@ static bool ota_check_new_version_available(void) {
     char response_buf[256] = {0};
 
     esp_http_client_config_t version_config = {
-        .url                    = VERSION_URL,
-        .cert_pem               = github_pem_buf,
-        .max_redirection_count  = 5,
+        .url                   = VERSION_URL,
+        .cert_pem              = github_pem_buf,
+        .max_redirection_count = 5,
     };
 
     esp_http_client_handle_t client = esp_http_client_init(&version_config);
@@ -61,16 +61,24 @@ static bool ota_check_new_version_available(void) {
         return false;
     }
 
-    esp_err_t err = esp_http_client_open(client, 0);
+    esp_err_t err = esp_http_client_perform(client);
     if (err != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to open HTTP connection: %s", esp_err_to_name(err));
+        ESP_LOGE(TAG, "HTTP request failed: %s", esp_err_to_name(err));
         esp_http_client_cleanup(client);
         return false;
     }
 
-    esp_http_client_fetch_headers(client);
-    int read_len = esp_http_client_read(client, response_buf, sizeof(response_buf) - 1);
-    esp_http_client_close(client);
+    int status = esp_http_client_get_status_code(client);
+    int read_len = esp_http_client_get_content_length(client);
+    ESP_LOGI(TAG, "HTTP status: %d, content length: %d", status, read_len);
+
+    if (status != 200) {
+        ESP_LOGE(TAG, "HTTP error status: %d", status);
+        esp_http_client_cleanup(client);
+        return false;
+    }
+
+    read_len = esp_http_client_read_response(client, response_buf, sizeof(response_buf) - 1);
     esp_http_client_cleanup(client);
 
     if (read_len <= 0) {
