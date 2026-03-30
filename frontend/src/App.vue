@@ -38,8 +38,8 @@
         <span class="stat-label">Devices</span>
       </div>
       <div class="stat-card">
-        <span class="stat-number">{{ activePumpCount }}</span>
-        <span class="stat-label">Active Pumps</span>
+        <span class="stat-number">{{ activeActuatorCount }}</span>
+        <span class="stat-label">Active Actuators</span>
       </div>
       <div class="stat-card" :class="{ 'stat-alert': highWaterCount > 0 }">
         <span class="stat-number">{{ highWaterCount }}</span>
@@ -99,10 +99,10 @@
             <span class="sensor-hint">Digital: {{ device.raindropDigital }}</span>
           </div>
 
-          <!-- Pump -->
+          <!-- Actuator -->
           <div class="pump-row">
             <div>
-              <span class="sensor-label">Pump</span>
+              <span class="sensor-label">Actuator</span>
               <span class="pump-status" :class="device.pumpActive ? 'pump-on' : 'pump-off'">
                 {{ device.pumpActive ? 'ACTIVE' : 'Inactive' }}
               </span>
@@ -288,7 +288,7 @@ export default {
           state.devices[deviceId].lastUpdate = Date.now()
 
           const action = data.action === 'activate' ? 'ON' : 'OFF'
-          addLog(data.action === 'activate' ? 'warn' : 'success', `${deviceId} pump ${action}: ${data.reason || ''}`)
+          addLog(data.action === 'activate' ? 'warn' : 'success', `${deviceId} actuator ${action}: ${data.reason || ''}`)
         }
       } catch (err) {
         addLog('error', `Parse error: ${err.message}`)
@@ -310,7 +310,7 @@ export default {
           if (err) {
             state.errorMessage = `Publish failed: ${err.message}`
           } else {
-            addLog('info', `Manual pump ${action} sent to ${deviceId}`)
+            addLog('info', `Manual actuator ${action} sent to ${deviceId}`)
           }
         }
       )
@@ -331,7 +331,7 @@ export default {
     })
 
     const deviceCount = computed(() => Object.keys(state.devices).length)
-    const activePumpCount = computed(() => Object.values(state.devices).filter(d => d.pumpActive).length)
+    const activeActuatorCount = computed(() => Object.values(state.devices).filter(d => d.pumpActive).length)
     const highWaterCount = computed(() => Object.values(state.devices).filter(d => d.waterLevel > WATER_ON_THRESHOLD).length)
 
     onUnmounted(() => {
@@ -349,7 +349,7 @@ export default {
       formatTime,
       statusLabel,
       deviceCount,
-      activePumpCount,
+      activeActuatorCount,
       highWaterCount
     }
   }
