@@ -9,13 +9,12 @@
 #include "nvs_flash.h"
 #include "nvs.h"
 #include <string.h>
+#include <stdio.h>
 
 #define VERSION_URL             "https://github.com/Haskins2/iot_project/releases/latest/download/version.json"
 #define FIRMWARE_URL            "https://github.com/Haskins2/iot_project/releases/latest/download/esp32c6.bin"
 
-#ifndef CURRENT_VERSION
 #define CURRENT_VERSION         "1.1.0"
-#endif
 
 #define OTA_CHECK_INTERVAL_MS   (24 * 60 * 60 * 1000)
 
@@ -31,6 +30,18 @@ static esp_err_t _version_http_event_handler(esp_http_client_event_t *evt) {
         }
     }
     return ESP_OK;
+}
+
+static int compare_versions(const char *v1, const char *v2) {
+    int major1 = 0, minor1 = 0, patch1 = 0;
+    int major2 = 0, minor2 = 0, patch2 = 0;
+    
+    sscanf(v1, "%d.%d.%d", &major1, &minor1, &patch1);
+    sscanf(v2, "%d.%d.%d", &major2, &minor2, &patch2);
+    
+    if (major1 != major2) return major1 - major2;
+    if (minor1 != minor2) return minor1 - minor2;
+    return patch1 - patch2;
 }
 
 static bool ota_check_new_version_available(void) {
@@ -89,7 +100,7 @@ static bool ota_check_new_version_available(void) {
         return false;
     }
 
-    bool update_available = strcmp(version_item->valuestring, CURRENT_VERSION) != 0;
+    bool update_available = compare_versions(version_item->valuestring, CURRENT_VERSION) > 0;
     if (update_available) {
         ESP_LOGI(TAG, "New version available: %s (current: %s)",
                  version_item->valuestring, CURRENT_VERSION);
