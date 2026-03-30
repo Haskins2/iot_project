@@ -485,7 +485,7 @@ void app_main(void)
         xTaskCreate(ota_task, "ota_task", 8192, NULL, 5, NULL);
 
         /* Give OTA time to complete version check before starting MQTT */
-        vTaskDelay(pdMS_TO_TICKS(10000));
+        vTaskDelay(pdMS_TO_TICKS(1000000));
 
         /* Start MQTT (loads certs from NVS, connects to broker) */
         mqtt_app_start();
