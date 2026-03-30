@@ -102,7 +102,7 @@
           <!-- Actuator -->
           <div class="pump-row">
             <div>
-              <span class="sensor-label">Actuator</span>
+              <span class="sensor-label">Actuators</span>
               <span class="pump-status" :class="device.pumpActive ? 'pump-on' : 'pump-off'">
                 {{ device.pumpActive ? 'ACTIVE' : 'Inactive' }}
               </span>
