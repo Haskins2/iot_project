@@ -19,6 +19,7 @@
 
 /* ------- Configuration ------- */
 
+// Certificate buffers and device ID (populated from NVS at runtime)
 static char ca_crt_buf[4096];
 static char client_crt_buf[4096];
 static char client_key_buf[4096];
@@ -53,7 +54,7 @@ static char MQTT_TOPIC_ACTUATION[128];
 static int rain_raw = 0;  // TODO: populate from your rain sensor
 
 /* Logging tag used by ESP_LOG* macros */
-static const char *TAG = "water_sensor";
+static const char *TAG = "esp32c6_main";
 
 /* Global MQTT client and connection flag */
 static esp_mqtt_client_handle_t mqtt_client = NULL;
@@ -124,7 +125,7 @@ static esp_err_t load_certs_from_nvs(void)
 
     snprintf(MQTT_TOPIC_WATER_DATA, sizeof(MQTT_TOPIC_WATER_DATA), "devices/%s/water_data", device_id_buf);
     snprintf(MQTT_TOPIC_RAIN_DATA,  sizeof(MQTT_TOPIC_RAIN_DATA),  "devices/%s/rain_data",  device_id_buf);
-    snprintf(MQTT_TOPIC_ACTUATION,  sizeof(MQTT_TOPIC_ACTUATION),  "devices/%s/actuation",  device_id_buf);
+    snprintf(MQTT_TOPIC_ACTUATION,  sizeof(MQTT_TOPIC_ACTUATION),  "devices/%s/actuate",  device_id_buf);
 
     ESP_LOGI(TAG, "Topics: %s, %s, %s", MQTT_TOPIC_WATER_DATA, MQTT_TOPIC_RAIN_DATA, MQTT_TOPIC_ACTUATION);
 
@@ -439,17 +440,5 @@ void app_main(void)
             }
         }
 
-        // ACTUATE SERVO
-        if (adc_raw > 300)
-        {
-            ESP_LOGI(TAG, "Water detected! Opening servo.");
-            set_servo_angle(90);
-        }
-        else
-        {
-            set_servo_angle(0);
-        }
-
-        vTaskDelay(1000 / portTICK_PERIOD_MS);
     }
 }
