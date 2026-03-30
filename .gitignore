@@ -100,3 +100,5 @@ sdkconfig*
 
 # Ignore dependency lock files
 embedded_systems/esp32c6/dependencies.lock
+key.pem
+.gitignore

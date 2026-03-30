@@ -7,6 +7,7 @@ services:
     container_name: mqtt-broker
     ports:
       - "8883:8883"
+      - "8884:8884"
     volumes:
       - ./mosquitto/config/mosquitto.conf:/mosquitto/config/mosquitto.conf
       - ./mosquitto/config/acl:/mosquitto/config/acl:ro
