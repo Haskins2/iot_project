@@ -1,80 +1,66 @@
-# Water System UI
+# Water System Dashboard
 
-Vue.js web dashboard for real-time monitoring and control of the water level actuation system.
+Vue 3 web dashboard for real-time monitoring and control of the water level actuation system. Connects to the Mosquitto broker via WebSocket (port 8884).
 
 ## Features
 
-- 📊 Real-time sensor readings (water level, raindrop detection)
-- 🚰 Live pump status monitoring
-- 📡 Device connection status
-- 🎮 Manual pump control
-- 📈 System statistics (connected devices, active pumps, alerts)
+- Real-time water level readings with colour-coded bar (blue/yellow/red)
+- Raindrop sensor status (digital + analog values)
+- Live pump status with activate/deactivate controls
+- Stats row: device count, active pumps, high water alerts, message count
+- Activity log panel with timestamped events
+- Auto-reconnect on connection loss
 
 ## Setup
 
 ### Prerequisites
 
-- Node.js 16+ and npm
-- Access to the MQTT broker (WebSocket enabled on port 8884)
+- Node.js 18+ and npm
+- Mosquitto broker running with WebSocket listener on port 8884
 
-### Installation
+### Install and Run
 
 ```bash
 cd frontend
 npm install
+npm run dev -- --host 0.0.0.0
 ```
 
-### Development Server
+Dashboard at `http://localhost:5173`.
+
+### Remote Access via SSH Tunnel
+
+If the VM doesn't have public ingress on ports 5173/8884:
 
 ```bash
-npm run dev
+ssh -i key.pem -L 5173:localhost:5173 -L 8884:localhost:8884 ubuntu@150.230.122.17
 ```
 
-The dashboard will be available at `http://localhost:5173`
+Then open `http://localhost:5173` — the broker URL auto-detects `ws://localhost:8884`.
 
-### Production Build
+## MQTT Topics
 
-```bash
-npm run build
-npm run preview
+| Topic | Direction | Purpose |
+|-------|-----------|---------|
+| `devices/+/water_level` | Subscribe | Incoming sensor telemetry |
+| `devices/+/actuate` | Subscribe | Pump commands from actuation service |
+| `devices/{id}/actuate` | Publish | Manual pump control from dashboard |
+
+## Tech Stack
+
+- **Vue 3** — UI framework
+- **Vite 5** — Dev server and build
+- **mqtt.js 5** — WebSocket MQTT client
+
+## File Structure
+
+```
+frontend/
+├── index.html          # Entry point (dark gradient background)
+├── package.json        # Dependencies
+└── src/
+    ├── main.js         # Vue app mount
+    └── App.vue         # Dashboard component (template + script + styles)
 ```
 
-## Browser Access
-
-1. Open your browser to the development server URL
-2. Update the broker URL if needed (default: `ws://150.230.122.17:8884`)
-3. Click "Connect" to start receiving real-time updates
-
-## Broker URL Format
-
-- **WebSocket (unencrypted):** `ws://ip-address:8884`
-- **WebSocket over TLS:** `wss://ip-address:8884`
-
-## Connection Requirements
-
-- The MQTT broker must have WebSocket listener enabled (port 8884)
-- Browser CORS allows WebSocket connections
-- For WSSL connections, browser must trust the broker's certificate
-
-## Architecture
-
-The dashboard uses:
-- **Vue 3** for the UI framework
-- **Vite** for build tooling
-- **MQTT.js** for WebSocket MQTT connections
-- **Real-time updates** via MQTT pub/sub
-
-Topics monitored:
-- `devices/+/water_level` - Sensor telemetry
-- `devices/+/actuate` - Pump control status
-
-## Docker Deployment
-
-To run the frontend in a Docker container:
-
-```bash
-docker build -f frontend.Dockerfile -t water-ui .
-docker run -p 5173:3000 water-ui
-```
-
-Connect to `http://localhost:5173` from your browser.
+See [FRONTEND_SETUP.md](../FRONTEND_SETUP.md) for the full project setup guide.
