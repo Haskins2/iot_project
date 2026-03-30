@@ -173,9 +173,17 @@ c.disconnect()
 Copy to the VM and run:
 
 ```bash
-scp -i key.pem test_publish.py ubuntu@150.230.122.17:/tmp/
+scp -i key.pem backend/tests/test_publish.py ubuntu@150.230.122.17:/tmp/
 ssh -i key.pem ubuntu@150.230.122.17 "cd ~/iot_project/backend && \
   docker compose exec -T actuation python - < /tmp/test_publish.py"
+```
+
+There is also a more comprehensive test script at `backend/tests/test_scenarios.py` that exercises hysteresis, raindrop confirmation, and analog-only rain detection across multiple devices. Run it the same way:
+
+```bash
+scp -i key.pem backend/tests/test_scenarios.py ubuntu@150.230.122.17:/tmp/
+ssh -i key.pem ubuntu@150.230.122.17 "cd ~/iot_project/backend && \
+  docker compose exec -T actuation python - < /tmp/test_scenarios.py"
 ```
 
 ### Expected Behaviour
