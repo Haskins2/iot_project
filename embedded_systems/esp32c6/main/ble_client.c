@@ -487,16 +487,10 @@ static void gattc_profile_event_handler(esp_gattc_cb_event_t event,
                 if (err == ESP_OK && json_payload) {
                     ESP_LOGI(TAG, "Image MQTT payload ready: %u bytes", (unsigned)json_len);
 
-                    /* Dump full payload to UART for capture.
-                     * Uses printf (not ESP_LOGI) to avoid the ~512 byte truncation.
-                     * Copy from monitor or pipe: idf.py monitor | tee payload.json */
-                    printf("\n[MQTT_PAYLOAD_START]\n");
-                    printf("%s\n", json_payload);
-                    printf("[MQTT_PAYLOAD_END]\n\n");
+                    /* Publish image payload over MQTT (defined in main.c) */
+                    extern void mqtt_publish_image(const char *payload, int len);
+                    mqtt_publish_image(json_payload, (int)json_len);
 
-                    /* TODO: Publish json_payload over MQTT
-                     * mqtt_publish(topic, json_payload, json_len);
-                     */
                     free(json_payload);
                 }
 
@@ -557,17 +551,7 @@ static void gattc_event_handler(esp_gattc_cb_event_t event,
 
 esp_err_t BleClientInit(void)
 {
-    esp_err_t ret;
-
-    /* NVS is required by the BT stack */
-    ret = nvs_flash_init();
-    if (ret == ESP_ERR_NVS_NO_FREE_PAGES ||
-        ret == ESP_ERR_NVS_NEW_VERSION_FOUND)
-    {
-        ESP_ERROR_CHECK(nvs_flash_erase());
-        ret = nvs_flash_init();
-    }
-    ESP_ERROR_CHECK(ret);
+    /* NVS must be initialised by app_main() before calling BleClientInit() */
 
     /* Release Classic-BT memory — we only need BLE */
     ESP_ERROR_CHECK(esp_bt_controller_mem_release(ESP_BT_MODE_CLASSIC_BT));

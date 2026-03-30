@@ -9,6 +9,7 @@ idf_component_register(
         "pump.c"
         "image_reassembly.c"
         "image_encoder.c"
+        "ota.c"
     INCLUDE_DIRS "."
     REQUIRES
         driver
@@ -17,4 +18,12 @@ idf_component_register(
         bt
         esp_timer
         mbedtls
+        esp_wifi
+        esp_netif
+        esp_event
+        esp_https_ota
+        esp_http_client
+        mqtt
+        app_update
+        espressif__cjson
 )
