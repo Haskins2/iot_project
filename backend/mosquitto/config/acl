@@ -3,6 +3,11 @@
 # %u is substituted with the client's cert CN (via use_identity_as_username)
 # =============================================================================
 
+# Global — applies to ALL clients (including anonymous WebSocket dashboard)
+# Must appear BEFORE any "user" line, otherwise Mosquitto scopes it to the
+# preceding user block.
+topic read devices/#
+
 # Backend subscriber — read all device topics
 user subscriber-service
 topic read devices/#

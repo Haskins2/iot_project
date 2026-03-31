@@ -37,8 +37,8 @@ CLIENT_KEY = os.getenv('CLIENT_KEY',    '/certs/actuation-service.key')
 RECONNECT_DELAY = 5
 
 # Water threshold settings
-WATER_ON_THRESHOLD = 1900
-WATER_OFF_THRESHOLD = 1880
+WATER_ON_THRESHOLD = 1500
+WATER_OFF_THRESHOLD = 1480
 HIGH_PERSISTENCE_SECONDS = 3
 WINDOW_SIZE = 5
 RAINDROP_ANALOG_THRESHOLD = 1500
@@ -218,7 +218,12 @@ class ActuationService:
                 water_sensor_value = data['water_level']
                 sensor_label = 'water_level'
             elif 'water_sensor' in data:
-                water_sensor_value = data['water_sensor']
+                water_sensor_raw = data['water_sensor']
+                # Handle nested dict format: {"raw": value}
+                if isinstance(water_sensor_raw, dict) and 'raw' in water_sensor_raw:
+                    water_sensor_value = water_sensor_raw['raw']
+                else:
+                    water_sensor_value = water_sensor_raw
                 sensor_label = 'water_sensor'
             else:
                 raise ValueError('Payload missing water_level or water_sensor field')
@@ -288,11 +293,18 @@ class ActuationService:
             else:
                 reason = "water normal"
 
+            pump_state = 1 if activate else 0
+            servo_angle = 90 if activate else 0
+            command = {
+                "pump": pump_state,
+                "servo": servo_angle,
+                "capture_image": False,
+                "poll_interval": 500
+              #  "reason": reason
+            }
             if activate:
-                command = {"deviceId": device_id, "ts": timestamp, "action": "activate", "reason": reason}
                 state['last_command'] = 'activate'
             else:
-                command = {"deviceId": device_id, "ts": timestamp, "action": "deactivate", "reason": reason}
                 state['last_command'] = 'deactivate'
 
             self.publish_command(device_id, command)
