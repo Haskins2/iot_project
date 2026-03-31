@@ -103,6 +103,33 @@ Then open `http://localhost:5173` in your browser. The dashboard auto-detects `w
 2. Click **Connect** — the badge should turn green ("Connected")
 3. Device cards appear automatically as sensor data arrives
 
+## 2d. Actual working commands used in this session
+
+When the VM is remote and you need a local dashboard + broker tunnel, the commands that worked in this setup were:
+
+```bash
+# On your Windows machine (PowerShell)
+ssh -i key.pem -L 5173:localhost:5173 -L 18884:localhost:8884 ubuntu@150.230.122.17
+
+# Keep this SSH session open while using the dashboard at http://localhost:5173
+# In a second shell in the VM or locally, start the frontend (on the VM works too):
+cd ~/iot_project/frontend
+npm install
+npm run dev -- --host 0.0.0.0
+
+# In the dashboard, use broker URL:
+ws://localhost:18884
+```
+
+If authentication is required (recommended), set these values in `.env`:
+
+```bash
+VITE_MQTT_USERNAME=frontend-user
+VITE_MQTT_PASSWORD=dashboard
+```
+
+Then restart the dashboard server.
+
 ## 3. Testing Without an ESP32
 
 You can test the full system by publishing simulated messages via the actuation container.
