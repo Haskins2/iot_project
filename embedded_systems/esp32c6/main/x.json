@@ -1,0 +1,21 @@
+{
+  "deviceId": "esp32-master-01",
+  "ts": "2026-03-31T14:40:03.714257+00:00Z",
+  "action": "deactivate",
+  "reason": "water normal"
+}
+
+{
+    "servo": 90,              // angle 0-180 (optional)
+    "pump": 1,                // 0=off, 1=on  (optional)
+    "capture_image": true,    // trigger camera (optional)
+    "poll_interval": 500      // ms (optional)
+}
+
+{
+    "pump": 1, 
+    "servo": 90, 
+    "capture_image": false, 
+    "poll_interval": 500, 
+    "reason": "high water confirmed by raindrop sensor"
+}

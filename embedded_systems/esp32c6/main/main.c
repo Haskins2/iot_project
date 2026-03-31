@@ -55,7 +55,7 @@
 /* ===================================================================== */
 /*  DEBUG flag — enables local flood-detection actuation for testing      */
 /* ===================================================================== */
-#define DEBUG_MODE  true
+#define DEBUG_MODE  false
 
 static const char *TAG = "flood_main";
 
@@ -176,7 +176,7 @@ static esp_err_t load_certs_from_nvs(void)
     /* Build MQTT topic strings from device ID
      * MQTT_TOPIC_WATER_DATA = periodic sensor data (named for legacy compat) */
     snprintf(MQTT_TOPIC_WATER_DATA, sizeof(MQTT_TOPIC_WATER_DATA),
-             "devices/%s/sensor_data", device_id_buf);
+             "devices/%s/water_level", device_id_buf);
     /* MQTT_TOPIC_RAIN_DATA = image + sensor data (named for legacy compat) */
     snprintf(MQTT_TOPIC_RAIN_DATA, sizeof(MQTT_TOPIC_RAIN_DATA),
              "devices/%s/image_data", device_id_buf);
