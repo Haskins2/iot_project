@@ -159,7 +159,7 @@ export default {
     let mqttClient = null
 
     const state = reactive({
-      brokerUrl: 'ws://150.230.122.17:8884',
+      brokerUrl: import.meta.env.VITE_MQTT_BROKER,
       connectionStatus: 'disconnected',
       devices: {},
       errorMessage: '',
@@ -198,7 +198,9 @@ export default {
         keepalive: 60,
         reconnectPeriod: 3000,
         connectTimeout: 10000,
-        rejectUnauthorized: false
+        rejectUnauthorized: false,
+        username: import.meta.env.VITE_MQTT_USERNAME,
+        password: import.meta.env.VITE_MQTT_PASSWORD,
       })
 
       mqttClient.on('connect', () => {
