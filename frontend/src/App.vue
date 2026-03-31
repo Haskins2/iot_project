@@ -69,21 +69,21 @@
           <!-- Water Level -->
           <div class="sensor-row">
             <span class="sensor-label">Water Level</span>
-            <span class="sensor-value" :class="{ 'value-high': device.waterLevel > 1900 }">
+            <span class="sensor-value" :class="{ 'value-high': device.waterLevel > 1500 }">
               {{ device.waterLevel }}
             </span>
           </div>
           <div class="level-bar">
             <div
               class="level-fill"
-              :class="{ 'fill-high': device.waterLevel > 1900, 'fill-warn': device.waterLevel > 1880 && device.waterLevel <= 1900 }"
+              :class="{ 'fill-high': device.waterLevel > 1500, 'fill-warn': device.waterLevel > 1480 && device.waterLevel <= 1500 }"
               :style="{ width: Math.min((device.waterLevel / 2048) * 100, 100) + '%' }"
             ></div>
           </div>
           <div class="sensor-row">
-            <span class="sensor-hint">Threshold: 1900 (on) / 1880 (off)</span>
-            <span class="sensor-tag" :class="device.waterLevel > 1900 ? 'tag-high' : 'tag-normal'">
-              {{ device.waterLevel > 1900 ? 'HIGH' : 'Normal' }}
+            <span class="sensor-hint">Threshold: 1500 (on) / 1480 (off)</span>
+            <span class="sensor-tag" :class="device.waterLevel > 1500 ? 'tag-high' : 'tag-normal'">
+              {{ device.waterLevel > 1500 ? 'HIGH' : 'Normal' }}
             </span>
           </div>
 
@@ -268,7 +268,7 @@ export default {
         const data = JSON.parse(payload)
 
         if (msgType === 'water_level') {
-          const level = data.water_level != null ? data.water_level : (data.water_sensor != null ? data.water_sensor : 0)
+          const level = data.water_level != null ? data.water_level : (data.water_sensor && data.water_sensor.raw != null ? data.water_sensor.raw : 0)
           state.devices[deviceId].waterLevel = level
           state.devices[deviceId].lastUpdate = Date.now()
 
