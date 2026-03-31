@@ -11,9 +11,12 @@ import ssl
 import time
 import json
 import logging
+import threading
 from collections import defaultdict, deque
 from datetime import datetime, timezone
 import paho.mqtt.client as mqtt
+
+from polling_rate import get_polling_rate
 
 # Logging
 logging.basicConfig(
@@ -39,6 +42,7 @@ WATER_OFF_THRESHOLD = 1480
 HIGH_PERSISTENCE_SECONDS = 3
 WINDOW_SIZE = 5
 RAINDROP_ANALOG_THRESHOLD = 1500
+FLOOD_PROB_THRESHOLD = 0.6
 
 class ActuationService:
 
@@ -146,6 +150,61 @@ class ActuationService:
             logger.warning(f"LOG - WARNING: Unknown topic: {topic}")
 
         logger.info(f"{'='*80}\n")
+
+    def polling_rate_worker(self, device_id="cloud"):
+        logger.info(f"LOG - INFO: Polling rate worker started for device {device_id}")
+
+            #TODO - if polling rate is high, ask to take a photo every twenty minutes
+
+        while True:
+            try:
+                now = datetime.now(timezone.utc)
+
+                # run at 5 minutes past the hour
+                target_minute = 5
+                seconds_past_hour = now.minute * 60 + now.second
+                target_seconds = target_minute * 60
+                seconds_until_next_run = target_seconds - seconds_past_hour
+
+                if seconds_until_next_run <= 0:
+                    seconds_until_next_run += 3600
+
+                logger.info(
+                    f"LOG - INFO: Polling worker sleeping {seconds_until_next_run} seconds until next run at 5 past the hour"
+                )
+                time.sleep(seconds_until_next_run)
+
+                polling_rate_prob = get_polling_rate()
+                polling_rate = 0
+                if polling_rate is not None:
+                    if polling_rate > FLOOD_PROB_THRESHOLD :
+                        polling_rate = 500
+                        # tell device to high poll rate
+                    else :
+                        polling_rate = 600
+                        # tell device to low poll rate
+                logger.info(
+                    f"LOG - INFO: Computed polling rate for device {device_id}: {polling_rate}"
+                )
+
+                self.publish_polling_rate(device_id, polling_rate)
+
+            except Exception as e:
+                logger.exception(f"LOG - ERROR: Polling rate worker failed: {e}")
+                time.sleep(60)
+
+    def publish_polling_rate(self, device_id, polling_rate):
+        command = {
+            "poll_interval": polling_rate
+        }
+        try :
+            self.publish_command(device_id, command)
+
+        except json.JSONDecodeError:
+            logger.error("LOG - ERROR: Invalid JSON payload — cannot determine polling rate")
+
+        except ValueError as e:
+            logger.error(f"LOG - ERROR: {e} — cannot determine polling rate")
 
 
     def handle_water_level(self, payload, timestamp, device_id):
@@ -300,6 +359,13 @@ class ActuationService:
         logger.info("=" * 80)
 
         self.connect_with_retry()
+
+        polling_thread = threading.Thread(
+            target=self.polling_rate_worker,
+            kwargs={"device_id": "device1"},
+            daemon=True
+        )
+        polling_thread.start()
 
         try:
             self.client.loop_forever()
