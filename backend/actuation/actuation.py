@@ -236,8 +236,6 @@ class ActuationService:
 
             pump_state = 1 if activate else 0
             command = {
-                "deviceId": device_id,
-                "ts": timestamp,
                 "pump": pump_state,
                 "servo": 90,
                 "capture_image": False,
