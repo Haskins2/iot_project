@@ -159,7 +159,7 @@ export default {
     let mqttClient = null
 
     const state = reactive({
-      brokerUrl: `ws://${window.location.hostname}:8884`,
+      brokerUrl: 'ws://150.230.122.17:8884',
       connectionStatus: 'disconnected',
       devices: {},
       errorMessage: '',
