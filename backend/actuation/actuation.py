@@ -235,9 +235,10 @@ class ActuationService:
                 reason = "water normal"
 
             pump_state = 1 if activate else 0
+            servo_angle = 90 if activate else 0
             command = {
                 "pump": pump_state,
-                "servo": 90,
+                "servo": servo_angle,
                 "capture_image": False,
                 "poll_interval": 500
               #  "reason": reason
