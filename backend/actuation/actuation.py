@@ -239,8 +239,8 @@ class ActuationService:
                 "pump": pump_state,
                 "servo": 90,
                 "capture_image": False,
-                "poll_interval": 500,
-                "reason": reason
+                "poll_interval": 500
+              #  "reason": reason
             }
             if activate:
                 state['last_command'] = 'activate'
