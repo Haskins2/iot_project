@@ -299,7 +299,7 @@ class ActuationService:
                 "pump": pump_state,
                 "servo": servo_angle,
                 "capture_image": False,
-                "poll_interval": 500
+               # "poll_interval": 500
               #  "reason": reason
             }
             if activate:
