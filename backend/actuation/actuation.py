@@ -234,11 +234,19 @@ class ActuationService:
             else:
                 reason = "water normal"
 
+            pump_state = 1 if activate else 0
+            command = {
+                "deviceId": device_id,
+                "ts": timestamp,
+                "pump": pump_state,
+                "servo": 90,
+                "capture_image": False,
+                "poll_interval": 500,
+                "reason": reason
+            }
             if activate:
-                command = {"deviceId": device_id, "ts": timestamp, "action": "activate", "reason": reason}
                 state['last_command'] = 'activate'
             else:
-                command = {"deviceId": device_id, "ts": timestamp, "action": "deactivate", "reason": reason}
                 state['last_command'] = 'deactivate'
 
             self.publish_command(device_id, command)
