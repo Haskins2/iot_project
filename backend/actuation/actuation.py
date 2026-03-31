@@ -42,6 +42,7 @@ WATER_OFF_THRESHOLD = 1880
 HIGH_PERSISTENCE_SECONDS = 3
 WINDOW_SIZE = 5
 RAINDROP_ANALOG_THRESHOLD = 1500
+FLOOD_PROB_THRESHOLD = 0.6
 
 class ActuationService:
 
@@ -173,7 +174,15 @@ class ActuationService:
                 )
                 time.sleep(seconds_until_next_run)
 
-                polling_rate = get_polling_rate()
+                polling_rate_prob = get_polling_rate()
+                polling_rate = 0
+                if polling_rate is not None:
+                    if polling_rate > FLOOD_PROB_THRESHOLD :
+                        polling_rate = 500
+                        # tell device to high poll rate
+                    else :
+                        polling_rate = 600
+                        # tell device to low poll rate
                 logger.info(
                     f"LOG - INFO: Computed polling rate for device {device_id}: {polling_rate}"
                 )
@@ -185,19 +194,17 @@ class ActuationService:
                 time.sleep(60)
 
     def publish_polling_rate(self, device_id, polling_rate):
-        topic = f"devices/{device_id}/polling_rate"
         command = {
-            "deviceId": device_id,
-            "ts": datetime.now(timezone.utc).isoformat() + 'Z',
-            "polling_rate": polling_rate
+            "poll_interval": polling_rate
         }
-        payload = json.dumps(command)
-        result = self.client.publish(topic, payload, qos=1)
+        try :
+            self.publish_command(device_id, command)
 
-        if result.rc == mqtt.MQTT_ERR_SUCCESS:
-            logger.info(f"LOG - INFO: Polling rate published  {topic}: {payload}")
-        else:
-            logger.error(f"LOG - ERROR: Failed to publish polling rate to {topic} (rc={result.rc})")
+        except json.JSONDecodeError:
+            logger.error("LOG - ERROR: Invalid JSON payload — cannot determine polling rate")
+
+        except ValueError as e:
+            logger.error(f"LOG - ERROR: {e} — cannot determine polling rate")
 
 
     def handle_water_level(self, payload, timestamp, device_id):
