@@ -11,9 +11,12 @@ import ssl
 import time
 import json
 import logging
+import threading
 from collections import defaultdict, deque
 from datetime import datetime, timezone
 import paho.mqtt.client as mqtt
+
+from polling_rate import get_polling_rate
 
 # Logging
 logging.basicConfig(
@@ -146,6 +149,55 @@ class ActuationService:
             logger.warning(f"LOG - WARNING: Unknown topic: {topic}")
 
         logger.info(f"{'='*80}\n")
+
+    def polling_rate_worker(self, device_id="cloud"):
+        logger.info(f"LOG - INFO: Polling rate worker started for device {device_id}")
+
+            #TODO - if polling rate is high, ask to take a photo every twenty minutes
+
+        while True:
+            try:
+                now = datetime.now(timezone.utc)
+
+                # run at 5 minutes past the hour
+                target_minute = 5
+                seconds_past_hour = now.minute * 60 + now.second
+                target_seconds = target_minute * 60
+                seconds_until_next_run = target_seconds - seconds_past_hour
+
+                if seconds_until_next_run <= 0:
+                    seconds_until_next_run += 3600
+
+                logger.info(
+                    f"LOG - INFO: Polling worker sleeping {seconds_until_next_run} seconds until next run at 5 past the hour"
+                )
+                time.sleep(seconds_until_next_run)
+
+                polling_rate = get_polling_rate()
+                logger.info(
+                    f"LOG - INFO: Computed polling rate for device {device_id}: {polling_rate}"
+                )
+
+                self.publish_polling_rate(device_id, polling_rate)
+
+            except Exception as e:
+                logger.exception(f"LOG - ERROR: Polling rate worker failed: {e}")
+                time.sleep(60)
+
+    def publish_polling_rate(self, device_id, polling_rate):
+        topic = f"devices/{device_id}/polling_rate"
+        command = {
+            "deviceId": device_id,
+            "ts": datetime.now(timezone.utc).isoformat() + 'Z',
+            "polling_rate": polling_rate
+        }
+        payload = json.dumps(command)
+        result = self.client.publish(topic, payload, qos=1)
+
+        if result.rc == mqtt.MQTT_ERR_SUCCESS:
+            logger.info(f"LOG - INFO: Polling rate published  {topic}: {payload}")
+        else:
+            logger.error(f"LOG - ERROR: Failed to publish polling rate to {topic} (rc={result.rc})")
 
 
     def handle_water_level(self, payload, timestamp, device_id):
@@ -288,6 +340,13 @@ class ActuationService:
         logger.info("=" * 80)
 
         self.connect_with_retry()
+
+        polling_thread = threading.Thread(
+            target=self.polling_rate_worker,
+            kwargs={"device_id": "device1"},
+            daemon=True
+        )
+        polling_thread.start()
 
         try:
             self.client.loop_forever()
