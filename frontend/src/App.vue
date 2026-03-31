@@ -148,7 +148,7 @@
 import { reactive, computed, onUnmounted, nextTick, ref } from 'vue'
 import mqtt from 'mqtt'
 
-const WATER_ON_THRESHOLD = 1900
+const WATER_ON_THRESHOLD = 1500
 const RAINDROP_ANALOG_THRESHOLD = 1500
 const MAX_LOG_ENTRIES = 100
 
@@ -159,7 +159,7 @@ export default {
     let mqttClient = null
 
     const state = reactive({
-      brokerUrl: 'ws://150.230.122.17:8884',
+      brokerUrl: 'ws://localhost:18884',
       connectionStatus: 'disconnected',
       devices: {},
       errorMessage: '',
@@ -283,12 +283,13 @@ export default {
           addLog('data', `${deviceId} water=${level}${tag}`)
 
         } else if (msgType === 'actuate') {
-          state.devices[deviceId].pumpActive = data.action === 'activate'
+          // New format with pump, servo, etc.
+          state.devices[deviceId].pumpActive = data.pump === 1
           state.devices[deviceId].pumpReason = data.reason || ''
           state.devices[deviceId].lastUpdate = Date.now()
 
-          const action = data.action === 'activate' ? 'ON' : 'OFF'
-          addLog(data.action === 'activate' ? 'warn' : 'success', `${deviceId} actuator ${action}: ${data.reason || ''}`)
+          const action = data.pump === 1 ? 'ON' : 'OFF'
+          addLog(data.pump === 1 ? 'warn' : 'success', `${deviceId} actuator ${action}: ${data.reason || ''}`)
         }
       } catch (err) {
         addLog('error', `Parse error: ${err.message}`)
