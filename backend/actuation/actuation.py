@@ -159,7 +159,12 @@ class ActuationService:
                 water_sensor_value = data['water_level']
                 sensor_label = 'water_level'
             elif 'water_sensor' in data:
-                water_sensor_value = data['water_sensor']
+                water_sensor_raw = data['water_sensor']
+                # Handle nested dict format: {"raw": value}
+                if isinstance(water_sensor_raw, dict) and 'raw' in water_sensor_raw:
+                    water_sensor_value = water_sensor_raw['raw']
+                else:
+                    water_sensor_value = water_sensor_raw
                 sensor_label = 'water_sensor'
             else:
                 raise ValueError('Payload missing water_level or water_sensor field')
