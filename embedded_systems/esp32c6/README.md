@@ -20,9 +20,18 @@ Servos:
 - `DIYMORE-DM996 (x2)`
   - https://www.handsontec.com/dataspecs/motor_fan/MG996R.pdf
 
-Water sensors:
+Water sensor:
 
 - `(unknown)`
+
+Raindrop sensor:
+
+-  model no: `fc-37`
+
+Humidity sensor:
+
+- unknown
+
 
 ---
 

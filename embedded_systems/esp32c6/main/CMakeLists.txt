@@ -1,3 +1,29 @@
-idf_component_register(SRCS "main.c"
-                       INCLUDE_DIRS "."
-                       REQUIRES esp_adc driver nvs_flash esp_wifi esp_netif esp_event mqtt esp_timer esp_https_ota esp_http_client app_update espressif__cjson)
+idf_component_register(
+    SRCS
+        "main.c"
+        "raindrop_sensor.c"
+        "water_sensor.c"
+        "servo.c"
+        "ble_client.c"
+        "sensor_packet.c"
+        "pump.c"
+        "image_reassembly.c"
+        "image_encoder.c"
+        "ota.c"
+    INCLUDE_DIRS "."
+    REQUIRES
+        driver
+        esp_adc
+        nvs_flash
+        bt
+        esp_timer
+        mbedtls
+        esp_wifi
+        esp_netif
+        esp_event
+        esp_https_ota
+        esp_http_client
+        mqtt
+        app_update
+        espressif__cjson
+)
