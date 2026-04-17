@@ -16,3 +16,8 @@ topic write devices/#
 # %u matches the cert CN e.g. esp-a1b2c3 → devices/esp-a1b2c3/#
 pattern write devices/%u/#
 pattern read devices/%u/actuate
+
+# Frontend dashboard — read only, scoped to relevant topics only
+user frontend-user
+topic read devices/+/water_level
+topic read devices/+/actuate

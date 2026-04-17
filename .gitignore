@@ -75,6 +75,11 @@ venv/
 .venv/
 env/
 
+# Node.js dependencies
+node_modules/
+frontend/node_modules/
+backend/node_modules/
+
 # Language Servers
 .clangd/
 .ccls-cache/
@@ -99,3 +104,10 @@ Desktop.ini
 
 # Ignore dependency lock files
 embedded_systems/esp32c6/dependencies.lock
+
+key.pem
+.gitignore
+
+#Test data
+backend/actuation/sample.xml
+

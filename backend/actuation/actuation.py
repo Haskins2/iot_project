@@ -3,8 +3,6 @@
 Actuation Logic Service
 Subscribes to devices/+/water_level, analyses the payload,
 and publishes a command to devices/{device_id}/actuate.
-
-TODO: Add decision logic in handle_water_level()
 """
 
 import os
@@ -13,8 +11,12 @@ import ssl
 import time
 import json
 import logging
+import threading
+from collections import defaultdict, deque
 from datetime import datetime, timezone
 import paho.mqtt.client as mqtt
+
+from polling_rate import get_polling_rate
 
 # Logging
 logging.basicConfig(
@@ -34,6 +36,13 @@ CLIENT_CERT = os.getenv('CLIENT_CERT',   '/certs/actuation-service.crt')
 CLIENT_KEY = os.getenv('CLIENT_KEY',    '/certs/actuation-service.key')
 RECONNECT_DELAY = 5
 
+# Water threshold settings
+WATER_ON_THRESHOLD = 1500
+WATER_OFF_THRESHOLD = 900
+HIGH_PERSISTENCE_SECONDS = 3
+WINDOW_SIZE = 5
+RAINDROP_ANALOG_THRESHOLD = 1500
+FLOOD_PROB_THRESHOLD = 0.6
 
 class ActuationService:
 
@@ -61,6 +70,26 @@ class ActuationService:
         # Enable automatic reconnection
         self.client.reconnect_delay_set(min_delay=1, max_delay=120)
 
+        # Per-device actuation state for hysteresis, persistence, and anomaly detection
+        self.device_state = defaultdict(lambda: {
+            'high_start_time': None,
+            'recent_readings': deque(maxlen=WINDOW_SIZE),
+            'last_command': 'deactivate'
+        })
+
+
+    def _get_device_state(self, device_id):
+        return self.device_state[device_id]
+
+    def is_raindrop_detected(self, analog, digital):
+        if digital is not None:
+            if str(digital) in ('1', 'true', 'True', 'yes', 'Yes'):
+                return True
+
+        try:
+            return int(analog) >= RAINDROP_ANALOG_THRESHOLD
+        except (TypeError, ValueError):
+            return False
 
     def on_connect(self, client, userdata, flags, rc):
         """
@@ -122,34 +151,168 @@ class ActuationService:
 
         logger.info(f"{'='*80}\n")
 
+    def polling_rate_worker(self, device_id="cloud"):
+        logger.info(f"LOG - INFO: Polling rate worker started for device {device_id}")
+
+            #TODO - if polling rate is high, ask to take a photo every twenty minutes
+
+        while True:
+            try:
+                now = datetime.now(timezone.utc)
+
+                # run at 5 minutes past the hour
+                target_minute = 5
+                seconds_past_hour = now.minute * 60 + now.second
+                target_seconds = target_minute * 60
+                seconds_until_next_run = target_seconds - seconds_past_hour
+
+                if seconds_until_next_run <= 0:
+                    seconds_until_next_run += 3600
+
+                logger.info(
+                    f"LOG - INFO: Polling worker sleeping {seconds_until_next_run} seconds until next run at 5 past the hour"
+                )
+                time.sleep(seconds_until_next_run)
+
+                polling_rate_prob = get_polling_rate()
+                polling_rate = 0
+                if polling_rate is not None:
+                    if polling_rate > FLOOD_PROB_THRESHOLD :
+                        polling_rate = 500
+                        # tell device to high poll rate
+                    else :
+                        polling_rate = 600
+                        # tell device to low poll rate
+                logger.info(
+                    f"LOG - INFO: Computed polling rate for device {device_id}: {polling_rate}"
+                )
+
+                self.publish_polling_rate(device_id, polling_rate)
+
+            except Exception as e:
+                logger.exception(f"LOG - ERROR: Polling rate worker failed: {e}")
+                time.sleep(60)
+
+    def publish_polling_rate(self, device_id, polling_rate):
+        command = {
+            "poll_interval": polling_rate
+        }
+        try :
+            self.publish_command(device_id, command)
+
+        except json.JSONDecodeError:
+            logger.error("LOG - ERROR: Invalid JSON payload — cannot determine polling rate")
+
+        except ValueError as e:
+            logger.error(f"LOG - ERROR: {e} — cannot determine polling rate")
+
 
     def handle_water_level(self, payload, timestamp, device_id):
         """
         Analyse water level data and publish an actuation command.
-
-        TODO: Replace the stub logic below with real decision logic.
-              The command dict can be extended with whatever fields the device needs.
-              We could have it upon reaching a set threshold, increase polling rate, call the Modelled actuation
         """
         try:
             data = json.loads(payload)
-            water_level = data.get('water_level')
 
-            logger.info(f"LOG - INFO: Analysing water level for device {device_id}: {water_level}")
+            if 'water_level' in data:
+                water_sensor_value = data['water_level']
+                sensor_label = 'water_level'
+            elif 'water_sensor' in data:
+                water_sensor_raw = data['water_sensor']
+                # Handle nested dict format: {"raw": value}
+                if isinstance(water_sensor_raw, dict) and 'raw' in water_sensor_raw:
+                    water_sensor_value = water_sensor_raw['raw']
+                else:
+                    water_sensor_value = water_sensor_raw
+                sensor_label = 'water_sensor'
+            else:
+                raise ValueError('Payload missing water_level or water_sensor field')
 
-            # --- TODO: decision logic goes here ---
+            raindrop_data = data.get('raindrop_sensor', {})
+            raindrop_analog = raindrop_data.get('analog')
+            raindrop_digital = raindrop_data.get('digital')
+
+            logger.info(f"LOG - INFO: Analysing {sensor_label} for device {device_id}: {water_sensor_value}")
+            logger.info(f"LOG - INFO: raindrop_sensor analog={raindrop_analog} digital={raindrop_digital}")
+
+            water_level = float(water_sensor_value)
+            raindrop_confirmed = self.is_raindrop_detected(raindrop_analog, raindrop_digital)
+            now = datetime.now(timezone.utc)
+
+            state = self._get_device_state(device_id)
+            state['recent_readings'].append({
+                'water_level': water_level,
+                'raindrop': raindrop_confirmed,
+                'timestamp': now
+            })
+
+            recent_high_count = sum(1 for r in state['recent_readings'] if r['water_level'] >= WATER_ON_THRESHOLD)
+            recent_rain_count = sum(1 for r in state['recent_readings'] if r['raindrop'])
+            logger.info(
+                f"LOG - INFO: Window highs={recent_high_count}/{len(state['recent_readings'])} "
+                f"rain confirms={recent_rain_count}/{len(state['recent_readings'])}"
+            )
+
+            if water_level < WATER_OFF_THRESHOLD:
+                state['high_start_time'] = None
+            elif state['high_start_time'] is None and water_level >= WATER_ON_THRESHOLD:
+                state['high_start_time'] = now
+
+            sustained_seconds = 0.0
+            if state['high_start_time'] is not None:
+                sustained_seconds = (now - state['high_start_time']).total_seconds()
+
+            if water_level >= WATER_ON_THRESHOLD and not raindrop_confirmed and recent_high_count < 2:
+                logger.warning("LOG - WARNING: Possible short spike detected")
+
+            if raindrop_confirmed and water_level < WATER_OFF_THRESHOLD:
+                logger.warning("LOG - WARNING: Rain detected without sufficient water rise yet")
+
+            command = None
+            reason = None
+            activate = False
+
+            if water_level >= WATER_ON_THRESHOLD:
+                if raindrop_confirmed:
+                    activate = True
+                    reason = "high water confirmed by raindrop sensor"
+                elif sustained_seconds >= HIGH_PERSISTENCE_SECONDS:
+                    activate = True
+                    reason = "sustained high water level"
+                elif recent_high_count >= 3:
+                    activate = True
+                    reason = "persistently high water readings"
+                else:
+                    reason = "high water detected, waiting for confirmation"
+            elif state['last_command'] == 'activate' and water_level > WATER_OFF_THRESHOLD:
+                activate = True
+                reason = "hysteresis hold"
+            elif raindrop_confirmed and water_level >= WATER_OFF_THRESHOLD:
+                activate = True
+                reason = "raindrop confirmed with water near threshold"
+            else:
+                reason = "water normal"
+
+            pump_state = 1 if activate else 0
+            servo_angle = 90 if activate else 0
             command = {
-                "deviceId": device_id,
-                "ts": timestamp,
-                "action": "none",    # TODO: replace with derived action e.g. "pump_on"
-                "reason": "stub"     # TODO: replace with derived reason
+                "pump": pump_state,
+                "servo": servo_angle,
+                "capture_image": False,
+               # "poll_interval": 500
+              #  "reason": reason
             }
-            # --------------------------------------
+            if activate:
+                state['last_command'] = 'activate'
+            else:
+                state['last_command'] = 'deactivate'
 
             self.publish_command(device_id, command)
 
         except json.JSONDecodeError:
             logger.error("LOG - ERROR: Invalid JSON payload — cannot determine actuation")
+        except ValueError as e:
+            logger.error(f"LOG - ERROR: {e} — cannot determine actuation")
 
 
     def publish_command(self, device_id, command):
@@ -196,6 +359,13 @@ class ActuationService:
         logger.info("=" * 80)
 
         self.connect_with_retry()
+
+        polling_thread = threading.Thread(
+            target=self.polling_rate_worker,
+            kwargs={"device_id": "device1"},
+            daemon=True
+        )
+        polling_thread.start()
 
         try:
             self.client.loop_forever()
